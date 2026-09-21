@@ -1,0 +1,5 @@
+{
+  "_comment": "mongodb-memory-server-core does not download at install time. The binary is fetched on first use of `npm run smoke` / `npm run dev:local` and cached in the user's home directory, so several projects share one copy instead of each carrying a 74 MB binary in node_modules.",
+  "version": "7.0.14",
+  "downloadDir": "~/.cache/mongodb-binaries"
+}

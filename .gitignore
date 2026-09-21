@@ -1,0 +1,78 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Backend environment
+backend/.env
+backend/.env.local
+
+# Frontend environment
+frontend/.env
+frontend/.env.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Coverage directory
+coverage/
+*.lcov
+
+# Build outputs
+dist/
+build/
+out/
+
+# Frontend build
+frontend/dist/
+frontend/build/
+
+# Backend build
+backend/dist/
+backend/build/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+.editorconfig
+.project
+.classpath
+*.launch
+.settings/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Yarn Integrity file
+.yarn-integrity
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Debug files
+.debug
+# Environment files — never commit real credentials
+.env
+.env.*
+!.env.example
+!.env.*.example

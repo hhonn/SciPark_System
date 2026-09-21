@@ -1,0 +1,22 @@
+{
+  "name": "scipark-fullstack",
+  "version": "1.0.0",
+  "description": "SciPark - Smart Parking System (Full-Stack Application)",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "build:frontend": "cd frontend && npm run build",
+    "start:backend": "cd backend && npm start",
+    "start:dev:backend": "cd backend && npm run dev",
+    "start:dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run start:dev:backend\" \"npm run start:dev:frontend\"",
+    "build": "npm run build:frontend",
+    "start": "cd backend && npm start"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
