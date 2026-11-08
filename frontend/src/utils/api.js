@@ -1,8 +1,12 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 
-// Same-origin deployments resolve to /api; dev falls back to the local server.
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+// Production builds are served by the backend itself, so the API is same-origin
+// at /api. Only the Vite dev server (its own port) needs the absolute URL.
+// Previously a production build without VITE_API_URL called localhost:3000 —
+// i.e. the visitor's own machine — and every request failed once deployed.
+const API_URL = import.meta.env.VITE_API_URL
+  || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api')
 
 const api = axios.create({
   baseURL: API_URL,

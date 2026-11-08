@@ -11,11 +11,48 @@ import PaymentMethod from "../models/paymentMethodModel.js";
 import Subscription from "../models/subscriptionModel.js";
 import Notification from "../models/notificationModel.js";
 import { TIERS } from "../config/pricing.js";
+import { MIN_PASSWORD_LENGTH } from "../config/auth.js";
 
 dotenv.config();
 
 /** Promo codes are seeded relative to today, not a hard-coded 2024 date. */
 const daysFromNow = (days) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+const isProduction = process.env.NODE_ENV === "production";
+
+/**
+ * Seeding wipes every collection, users and bookings included. On a live
+ * database that is unrecoverable, so production requires an explicit --force.
+ */
+if (isProduction && !process.argv.includes("--force")) {
+  console.error("❌ NODE_ENV=production: seeding deletes ALL data (users, bookings, ...).");
+  console.error("   Re-run with `npm run seed -- --force` if that is really what you want.");
+  process.exit(1);
+}
+
+/**
+ * The default passwords are published in the README, so a production seed must
+ * not use them: anyone could sign in as the admin. Production reads them from
+ * the environment instead and refuses to run without them.
+ */
+const seedPassword = (envName, devDefault) => {
+  const value = process.env[envName];
+  if (value) {
+    if (value.length < MIN_PASSWORD_LENGTH) {
+      console.error(`❌ ${envName} must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      process.exit(1);
+    }
+    return value;
+  }
+  if (isProduction) {
+    console.error(`❌ ${envName} is required when NODE_ENV=production.`);
+    process.exit(1);
+  }
+  return devDefault;
+};
+
+const USER_PASSWORD = seedPassword("SEED_USER_PASSWORD", "password123");
+const ADMIN_PASSWORD = seedPassword("SEED_ADMIN_PASSWORD", "admin12345");
 
 const connectDB = async () => {
   if (!process.env.MONGO_URI) {
@@ -216,7 +253,7 @@ const seedDatabase = async () => {
       name: "ทดสอบ ไอรอน",
       email: "iron@test.com",
       username: "ironuser",
-      password: "password123",
+      password: USER_PASSWORD,
       phone: "0812345678",
       rank: "Iron",
       points: 50,
@@ -226,7 +263,7 @@ const seedDatabase = async () => {
       name: "ทดสอบ ไดมอนด์",
       email: "diamond@test.com",
       username: "diamonduser",
-      password: "password123",
+      password: USER_PASSWORD,
       phone: "0823456789",
       rank: "Diamond",
       points: 500,
@@ -237,7 +274,7 @@ const seedDatabase = async () => {
       name: "ทดสอบ เพรดเดเตอร์",
       email: "predator@test.com",
       username: "predatoruser",
-      password: "password123",
+      password: USER_PASSWORD,
       phone: "0834567890",
       rank: "Predator",
       points: 1000,
@@ -248,7 +285,7 @@ const seedDatabase = async () => {
       name: "ผู้ดูแลระบบ",
       email: "admin@scipark.app",
       username: "admin",
-      password: "admin12345",
+      password: ADMIN_PASSWORD,
       phone: "0800000000",
       rank: "Predator",
       points: 0,
@@ -278,9 +315,11 @@ const seedDatabase = async () => {
   console.log(`👥 Test Users    : ${createdUsers.length}`);
   console.log("━".repeat(50));
 
-  console.log("\n🔑 Test accounts (password shown as seeded)");
+  // Never echo real credentials into a production log.
+  console.log(`\n🔑 Test accounts${isProduction ? " (passwords from SEED_*_PASSWORD)" : " (password shown as seeded)"}`);
   testUsers.forEach((user) => {
-    console.log(`  ${user.rank.padEnd(9)} ${user.email.padEnd(22)} ${user.password}`);
+    const shown = isProduction ? "********" : user.password;
+    console.log(`  ${user.rank.padEnd(9)} ${user.email.padEnd(22)} ${shown}`);
   });
 
   console.log("\n🎫 Promo codes");

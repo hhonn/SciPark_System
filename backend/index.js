@@ -112,31 +112,18 @@ app.get('/api', (req, res) => {
   });
 });
 
-// Health Check endpoint
+// Health check: used by uptime monitors and the deploy pipeline. It is public,
+// so it reports only whether the app and database are up — memory and uptime
+// figures used to be included, which told anyone how the box was sized.
 app.get('/health', async (req, res) => {
-  try {
-    const mongoose = await import('mongoose');
-    const dbStatus = mongoose.default.connection.readyState === 1 ? 'connected' : 'disconnected';
+  const mongoose = await import('mongoose');
+  const dbUp = mongoose.default.connection.readyState === 1;
 
-    res.status(200).json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      database: dbStatus,
-      memory: {
-        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
-        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB'
-      },
-      services: {
-        autoCancelScheduler: 'running'
-      }
-    });
-  } catch (error) {
-    res.status(503).json({
-      status: 'error',
-      message: error.message
-    });
-  }
+  res.status(dbUp ? 200 : 503).json({
+    status: dbUp ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    database: dbUp ? 'connected' : 'disconnected',
+  });
 });
 
 app.use('/api/auth', authRouter);
@@ -192,11 +179,15 @@ if (frontendPath) {
 
 // Global error handler
 app.use((err, req, res, next) => {
-    const statusCode = err.statusCode || 500;
+    const statusCode = err.statusCode || err.status || 500;
     if (statusCode >= 500) console.error('Unhandled error:', err);
+    // A 5xx message can carry driver/query internals (collection names, index
+    // keys, connection strings), so production only says something went wrong.
+    // 4xx messages are meant for the client and are passed through.
+    const exposeMessage = statusCode < 500 || process.env.NODE_ENV !== 'production';
     res.status(statusCode).json({
         status: 'error',
-        message: err.message || 'Internal Server Error',
+        message: (exposeMessage && err.message) || 'Internal Server Error',
         ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
     });
 });

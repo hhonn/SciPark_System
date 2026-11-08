@@ -76,3 +76,6 @@ backend/build/
 .env.*
 !.env.example
 !.env.*.example
+
+# Private documents
+Proposal.pdf
