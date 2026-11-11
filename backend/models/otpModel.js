@@ -21,7 +21,12 @@ const otpSchema = new mongoose.Schema({
     type: String,
     enum: ['ACCOUNT_VERIFICATION', 'PASSWORD_RESET'],
     required: true,
-  }
+  },
+  // Wrong guesses so far; the code is discarded after too many.
+  attempts: {
+    type: Number,
+    default: 0,
+  },
 });
 
 // Hash OTP before saving to database for security

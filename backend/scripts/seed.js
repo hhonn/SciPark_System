@@ -187,7 +187,10 @@ const seedDatabase = async () => {
           building: zone.building,
           // Seed a realistic mix, but never seed "reserved": that status means
           // "a live booking is holding this", and no booking exists yet.
-          status: Math.random() < 0.18 ? "occupied" : "available",
+          // All free. Random "occupied" bays with no booking behind them looked
+          // realistic in a demo, but on a real database nothing ever released
+          // them: those bays could never be booked.
+          status: "available",
           pricePerHour: zone.hourlyRate,
           facilities: spotFacilities[Math.floor(Math.random() * spotFacilities.length)],
         });
@@ -304,6 +307,19 @@ const seedDatabase = async () => {
 
   const createdUsers = await User.insertMany(hashedUsers);
   console.log(`✅ Created ${createdUsers.length} test users`);
+
+  // Booking requires a car on file, so every test account gets one.
+  await Vehicle.insertMany(
+    createdUsers.map((user, i) => ({
+      licensePlate: `ทดสอบ${1001 + i}`,
+      brand: "Toyota",
+      model: "Yaris",
+      color: "ขาว",
+      userId: user._id,
+      isDefault: true,
+    }))
+  );
+  console.log(`✅ Created ${createdUsers.length} test vehicles`);
 
   const available = allSpots.filter((s) => s.status === "available").length;
 

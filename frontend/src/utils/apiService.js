@@ -17,6 +17,22 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
   sendVerifyOTP: () => api.post('/auth/send-verify-otp'),
   verifyAccount: (otp) => api.post('/auth/verify-account', { otp }),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: ({ email, otp, newPassword }) => api.post('/auth/reset-password', { email, otp, newPassword }),
+}
+
+export const pointsAPI = {
+  get: () => api.get('/points'),
+  redeem: (rewardId) => api.post('/points/redeem', { rewardId }),
+}
+
+/** Operators only (the API enforces it). */
+export const adminAPI = {
+  getBookings: (params) => api.get('/admin/bookings', { params }),
+  cancelBooking: (id, note) => api.post(`/admin/bookings/${id}/cancel`, { note }),
+  forceCheckout: (id, note) => api.post(`/admin/bookings/${id}/force-checkout`, { note }),
+  getUsers: (params) => api.get('/admin/users', { params }),
+  setStaff: (id, isStaff) => api.put(`/admin/users/${id}/staff`, { isStaff }),
 }
 
 export const pricingAPI = {
@@ -39,10 +55,20 @@ export const bookingAPI = {
   getHistory: (params) => api.get('/bookings/history', { params }),
   getQRCode: (bookingId) => api.get(`/bookings/${bookingId}/qr`),
   cancelBooking: (bookingId) => api.delete(`/bookings/${bookingId}`),
-  // The QR token proves the user is physically at the bay.
-  checkIn: (bookingId, qrPayload) => api.put(`/bookings/${bookingId}/checkin`, { qrPayload }),
+  // Self check-in: the phone's GPS fix is the proof of arrival. The other way
+  // in is a staff member scanning the QR (staffAPI.scan).
+  checkIn: (bookingId, { latitude, longitude, accuracy }) =>
+    api.put(`/bookings/${bookingId}/checkin`, { latitude, longitude, accuracy }),
   checkOut: (bookingId, paymentMethodId) =>
     api.put(`/bookings/${bookingId}/checkout`, { paymentMethodId }),
+}
+
+/** Parking staff and admins. */
+export const staffAPI = {
+  scan: (qrPayload) => api.post('/staff/scan', { qrPayload }),
+  getZones: () => api.get('/staff/zones'),
+  // Admin only: pin a lot to where the admin is standing (or clear it).
+  setZoneLocation: (zoneId, body) => api.put(`/staff/zones/${zoneId}/location`, body),
 }
 
 export const privilegesAPI = {
@@ -58,6 +84,10 @@ export const vehicleAPI = {
   update: (id, vehicleData) => api.put(`/vehicles/${id}`, vehicleData),
   delete: (id) => api.delete(`/vehicles/${id}`),
   setDefault: (id) => api.put(`/vehicles/${id}/default`),
+  // Car photo in S3: sign an upload, then confirm it.
+  requestPhotoUpload: (id, contentType) => api.post(`/vehicles/${id}/photo/upload`, { contentType }),
+  confirmPhoto: (id, key) => api.put(`/vehicles/${id}/photo`, { key }),
+  removePhoto: (id) => api.delete(`/vehicles/${id}/photo`),
 }
 
 export const paymentAPI = {

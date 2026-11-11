@@ -1,7 +1,8 @@
 import cron from 'node-cron';
 import Subscription from '../models/subscriptionModel.js';
-import User from '../models/userModel.js';
+import { syncUserTier } from './membershipService.js';
 import { createNotification } from './notificationService.js';
+import { runExclusive } from '../utils/jobLock.js';
 
 /**
  * Subscription expiry service.
@@ -13,7 +14,9 @@ import { createNotification } from './notificationService.js';
  * honest so the UI and the billing agree.
  */
 
-const CHECK_INTERVAL = '0 * * * *'; // hourly
+// Every 15 minutes: between a tier expiring and this sweep the member is
+// billed as Iron, so the gap is kept short.
+const CHECK_INTERVAL = '*/15 * * * *';
 let task = null;
 
 export const expireLapsedSubscriptions = async () => {
@@ -27,28 +30,31 @@ export const expireLapsedSubscriptions = async () => {
   if (lapsed.length === 0) return { expired: 0 };
 
   let expired = 0;
+  const affected = new Map();
 
   for (const subscription of lapsed) {
     try {
       subscription.status = 'expired';
       await subscription.save();
+      expired += 1;
 
       const userId = subscription.user?._id || subscription.user;
-      if (!userId) continue;
+      if (userId) affected.set(String(userId), subscription);
+    } catch (error) {
+      console.error(`[Subscription] Failed to expire ${subscription._id}:`, error.message);
+    }
+  }
 
-      // Only demote when there is no other subscription still running.
-      const stillActive = await Subscription.findOne({
-        user: userId,
-        status: 'active',
-        expiresAt: { $gt: now },
-      });
+  // Recompute rather than demote. The old sweep set the user to Iron unless
+  // some other row was active, and otherwise left them alone — so a member
+  // whose promo upgrade ended kept the expired tier's name and a past expiry
+  // (billed as Iron) even though a paid subscription was still running.
+  for (const [userId, subscription] of affected) {
+    try {
+      const before = subscription.user?.rank;
+      const membership = await syncUserTier(userId, { now });
 
-      if (!stillActive) {
-        await User.findByIdAndUpdate(userId, {
-          rank: 'Iron',
-          subscriptionExpiry: null,
-        });
-
+      if (membership.tier.id === 'iron') {
         await createNotification(
           userId,
           'system_announcement',
@@ -56,11 +62,17 @@ export const expireLapsedSubscriptions = async () => {
           `แพ็กเกจ ${subscription.tierName} ของคุณหมดอายุแล้ว ระดับสมาชิกกลับเป็น Iron — ต่ออายุเพื่อรับส่วนลดต่อ`,
           { tier: subscription.tier }
         );
+      } else if (before && before !== membership.tier.rank) {
+        await createNotification(
+          userId,
+          'system_announcement',
+          `แพ็กเกจ ${subscription.tierName} หมดอายุแล้ว`,
+          `ตอนนี้คุณใช้สิทธิ์ ${membership.tier.name} ที่ยังเหลืออยู่`,
+          { tier: membership.tier.id }
+        );
       }
-
-      expired += 1;
     } catch (error) {
-      console.error(`[Subscription] Failed to expire ${subscription._id}:`, error.message);
+      console.error(`[Subscription] Failed to resync user ${userId}:`, error.message);
     }
   }
 
@@ -76,13 +88,13 @@ export const startSubscriptionScheduler = () => {
 
   task = cron.schedule(CHECK_INTERVAL, async () => {
     try {
-      await expireLapsedSubscriptions();
+      await runExclusive('subscription-expiry', 14 * 60 * 1000, expireLapsedSubscriptions);
     } catch (error) {
       console.error('[Subscription] Scheduler error:', error);
     }
   });
 
-  console.log('✅ Subscription expiry scheduler is running (hourly)');
+  console.log('✅ Subscription expiry scheduler is running (every 15 min)');
 
   // Catch anything that lapsed while the server was down.
   setTimeout(() => {

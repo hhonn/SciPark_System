@@ -42,6 +42,10 @@ const run = async () => {
   const { default: PaymentMethod } = await import('../models/paymentMethodModel.js');
   const { default: Booking } = await import('../models/bookingModel.js');
   const { default: PromoCode } = await import('../models/promoCodeModel.js');
+  const { default: Vehicle } = await import('../models/vehicleModel.js');
+  let plateSeq = 1000;
+  const giveCar = (userId) =>
+    Vehicle.create({ licensePlate: `ทด${plateSeq++}`, brand: 'Toyota', model: 'Yaris', userId, isDefault: true });
   const bcrypt = (await import('bcryptjs')).default;
 
   const bookingCtrl = await import('../controllers/bookingController.js');
@@ -76,6 +80,9 @@ const run = async () => {
     phone: '0812345678',
     rank: 'Iron',
   });
+
+  // Bookings need a car on file (the staff scan compares the plate).
+  await giveCar(user._id);
 
   const zone = await ParkingZone.create({
     zoneName: 'SMOKE',
@@ -177,44 +184,57 @@ const run = async () => {
 
   await check('a second concurrent booking is rejected for the same user', async () => {
     const res = await call(bookingCtrl.createBooking, { body: { zoneId: zone._id.toString() }, userId: uid });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 409);
     assert.match(res.body.message, /มีการจองที่ใช้งานอยู่/);
   });
 
   console.log('\nCheck-in (Test Cases 6-7)');
 
-  await check('check-in is refused without a valid QR token', async () => {
-    const res = await call(bookingCtrl.checkIn, {
-      params: { bookingId },
-      body: { qrPayload: 'a'.repeat(64) },
-      userId: uid,
-    });
-    assert.equal(res.status, 400);
-    assert.equal(res.body.code, 'invalid_qr');
+  // Arrival is proven by a staff scan (or GPS, tested further down), never by
+  // the user replaying the token the API gave them.
+  const staffCtrl = await import('../controllers/staffController.js');
+  const staffUser = await User.create({
+    name: 'Gate Staff', email: 'staff@test.com', username: 'gatestaff',
+    password: await bcrypt.hash('password123', 10), isStaff: true,
   });
+  const staffId = staffUser._id.toString();
 
-  await check('TC6: a valid QR checks in and marks the spot occupied', async () => {
+  await check('a user can no longer check themselves in with the QR token', async () => {
     const res = await call(bookingCtrl.checkIn, {
       params: { bookingId },
       body: { qrPayload: global.__qrToken },
       userId: uid,
     });
-    assert.equal(res.status, 200);
+    // The test lot has no coordinates, so only a staff scan can check in.
+    assert.equal(res.status, 403);
+    assert.equal(res.body.code, 'self_checkin_unavailable');
+    assert.equal((await Booking.findById(bookingId)).status, 'pending');
+  });
+
+  await check('a staff scan of an unknown QR is refused', async () => {
+    const res = await call(staffCtrl.scanCheckIn, { body: { qrPayload: 'a'.repeat(64) }, userId: staffId });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, 'invalid_qr');
+  });
+
+  await check('TC6: a staff scan checks in and marks the spot occupied', async () => {
+    const payload = JSON.stringify({ v: 1, bookingId, token: global.__qrToken });
+    const res = await call(staffCtrl.scanCheckIn, { body: { qrPayload: payload }, userId: staffId });
+    assert.equal(res.status, 200, res.body.message);
+    assert.equal(res.body.data.driverName, 'Smoke Tester');
 
     const booking = await Booking.findById(bookingId);
     assert.equal(booking.status, 'confirmed');
     assert.ok(booking.actualStartTime, 'check-in time was not recorded');
+    assert.equal(booking.checkInMethod, 'staff_scan');
+    assert.equal(String(booking.checkedInBy), staffId);
 
     const spot = await ParkingSpot.findById(booking.spot);
     assert.equal(spot.status, 'occupied');
   });
 
   await check('the QR cannot be replayed after a successful check-in', async () => {
-    const res = await call(bookingCtrl.checkIn, {
-      params: { bookingId },
-      body: { qrPayload: global.__qrToken },
-      userId: uid,
-    });
+    const res = await call(staffCtrl.scanCheckIn, { body: { qrPayload: global.__qrToken }, userId: staffId });
     assert.equal(res.status, 400);
   });
 
@@ -321,7 +341,7 @@ const run = async () => {
 
   console.log('\nSecurity middleware');
 
-  await check('Mongo operators and markup are stripped from request bodies', async () => {
+  await check('Mongo operators are stripped, and text is stored as typed', async () => {
     const { sanitizeRequest } = await import('../middleware/security.js');
     const req = {
       body: { email: { $ne: null }, name: '<script>alert(1)</script>', nested: { 'a.b': 1, ok: 'x' } },
@@ -331,7 +351,9 @@ const run = async () => {
     await new Promise((resolve) => sanitizeRequest(req, {}, resolve));
 
     assert.equal(req.body.email.$ne, undefined, '$ne survived sanitising');
-    assert.ok(!req.body.name.includes('<script>'), 'markup survived sanitising');
+    // Not escaped on the way in: React escapes on output, and escaping input
+    // corrupted names and passwords (see middleware/security.js).
+    assert.equal(req.body.name, '<script>alert(1)</script>', 'input text was rewritten');
     assert.equal(req.body.nested['a.b'], undefined, 'a dotted key survived sanitising');
     assert.equal(req.body.nested.ok, 'x', 'a legitimate value was destroyed');
   });
@@ -375,18 +397,22 @@ const run = async () => {
 
   console.log('\nVehicles');
 
+  const plateUid = (await User.create({
+    name: 'Plates', email: 'plates@test.com', username: 'plates', password: 'h',
+  }))._id.toString();
+
   await check('a plate that differs only in spacing is refused, not a 500', async () => {
     const vehicleCtrl = await import('../controllers/vehicleController.js');
 
     const first = await call(vehicleCtrl.addVehicle, {
-      userId: uid,
+      userId: plateUid,
       body: { licensePlate: 'กข 1234', brand: 'Toyota', model: 'Yaris' },
     });
     assert.equal(first.status, 201);
     assert.equal(first.body.data.licensePlate, 'กข1234', 'the plate was not normalised');
 
     const second = await call(vehicleCtrl.addVehicle, {
-      userId: uid,
+      userId: plateUid,
       body: { licensePlate: 'กข  1234', brand: 'Toyota', model: 'Yaris' },
     });
     assert.equal(second.status, 409, 'a duplicate plate fell through to the unique index');
@@ -541,6 +567,795 @@ const run = async () => {
       MIN_PASSWORD_LENGTH,
       'the client would accept a password the server rejects (or vice versa)'
     );
+  });
+
+  // --- Phase 1 security regressions --------------------------------------
+  // These drive the middleware too, so the double needs cookies, headers and
+  // a `next` callback.
+  const authCtrl = await import('../controllers/authController.js');
+  const userCtrl = await import('../controllers/userController.js');
+  const { default: userAuth } = await import('../middleware/userAuth.js');
+
+  const httpCall = (handler, { body = {}, params = {}, headers = {}, cookies = {}, userId } = {}) =>
+    new Promise((resolve) => {
+      let statusCode = 200;
+      const set = {};
+      const req = { body, params, query: {}, headers, cookies, userId };
+      const res = {
+        status(code) { statusCode = code; return res; },
+        json(payload) { resolve({ status: statusCode, body: payload, cookies: set, req }); return res; },
+        cookie(name, value) { set[name] = value; return res; },
+        clearCookie(name) { set[name] = null; return res; },
+      };
+      Promise.resolve(handler(req, res, () => resolve({ status: 'next', req, cookies: set })));
+    });
+
+  const bearer = (token) => ({ authorization: `Bearer ${token}` });
+
+  console.log('\nPhase 1: authentication & concurrency');
+
+  await check('concurrent bookings on different spots still give one user one booking', async () => {
+    const racer = await User.create({
+      name: 'Racer', email: 'racer@test.com', username: 'racer',
+      password: await bcrypt.hash('password123', 10),
+    });
+    await PaymentMethod.create({
+      user: racer._id, type: 'promptpay', phoneNumber: '0899999999', isDefault: true,
+    });
+    await giveCar(racer._id);
+    const raceZone = await ParkingZone.create({ zoneName: 'RACE', name: 'ลานแข่ง', totalSpots: 4 });
+    const spots = await ParkingSpot.create(
+      ['R1', 'R2', 'R3', 'R4'].map((n) => ({ name: n, spotNumber: n, zone: raceZone._id }))
+    );
+
+    // Distinct spots, so the spot claims never collide with each other.
+    const results = await Promise.all(spots.map((s) =>
+      call(bookingCtrl.createBooking, { body: { spotId: s._id.toString() }, userId: racer._id.toString() })
+    ));
+
+    assert.equal(results.filter((r) => r.status === 201).length, 1, `statuses: ${results.map((r) => r.status)}`);
+    assert.equal(await Booking.countDocuments({ user: racer._id, status: { $in: ['pending', 'confirmed'] } }), 1);
+    assert.equal(await ParkingSpot.countDocuments({ zone: raceZone._id, status: 'reserved' }), 1,
+      'a refused booking left its spot held');
+  });
+
+  await check('a malformed payment method id is a clean 402, not a driver error', async () => {
+    const res = await call(bookingCtrl.createBooking, {
+      body: { zoneId: zone._id.toString(), paymentMethodId: 'not-an-id' },
+      userId: await (async () => {
+        const x = await User.create({ name: 'X', email: 'x@test.com', username: 'xuser', password: 'h' });
+        await giveCar(x._id);
+        return x._id.toString();
+      })(),
+    });
+    assert.equal(res.status, 402);
+    assert.doesNotMatch(res.body.message, /Cast to ObjectId/);
+  });
+
+  await check('a username cannot shadow someone else\'s email', async () => {
+    const victim = await httpCall(authCtrl.register, {
+      body: { name: 'Victim', email: 'owner@test.com', password: 'victimpass1' },
+    });
+    assert.equal(victim.status, 201);
+    assert.equal(victim.body.token, undefined, 'the JWT must not be returned in the body');
+
+    const squat = await httpCall(authCtrl.register, {
+      body: { name: 'A', email: 'attacker@test.com', username: 'OWNER@TEST.COM', password: 'password123' },
+    });
+    assert.equal(squat.status, 400, 'a username containing "@" was accepted');
+
+    const login = await httpCall(authCtrl.login, { body: { email: 'owner@test.com', password: 'victimpass1' } });
+    assert.equal(login.status, 200);
+    assert.equal(login.body.user.email, 'owner@test.com');
+  });
+
+  await check('usernames differing only in case cannot both register', async () => {
+    const first = await httpCall(authCtrl.register, {
+      body: { name: 'B', email: 'bob1@test.com', username: 'Bobby', password: 'password123' },
+    });
+    const second = await httpCall(authCtrl.register, {
+      body: { name: 'B', email: 'bob2@test.com', username: 'bobby', password: 'password123' },
+    });
+    assert.equal(first.status, 201);
+    assert.equal(second.status, 409);
+  });
+
+  await check('logout revokes the token itself, not just the cookie', async () => {
+    const login = await httpCall(authCtrl.login, { body: { email: 'owner@test.com', password: 'victimpass1' } });
+    const token = login.cookies.token;
+    assert.ok(token, 'login did not set the session cookie');
+
+    assert.equal((await httpCall(userAuth, { headers: bearer(token) })).status, 'next');
+
+    const out = await httpCall(authCtrl.logout, { headers: bearer(token) });
+    assert.equal(out.status, 200);
+    assert.equal(out.cookies.token, null, 'the cookie was not cleared');
+
+    const after = await httpCall(userAuth, { headers: bearer(token) });
+    assert.equal(after.status, 401);
+    assert.equal(after.body.code, 'token_revoked');
+  });
+
+  await check('changing the password signs out every other session', async () => {
+    const a = (await httpCall(authCtrl.login, { body: { email: 'owner@test.com', password: 'victimpass1' } })).cookies.token;
+    const b = (await httpCall(authCtrl.login, { body: { email: 'owner@test.com', password: 'victimpass1' } })).cookies.token;
+
+    const authed = await httpCall(userAuth, { headers: bearer(a) });
+    const changed = await httpCall(userCtrl.changePassword, {
+      body: { currentPassword: 'victimpass1', newPassword: 'victimpass2' },
+      userId: authed.req.userId,
+    });
+    assert.equal(changed.status, 200);
+    assert.ok(changed.cookies.token, 'the current session was not re-issued');
+
+    assert.equal((await httpCall(userAuth, { headers: bearer(b) })).status, 401, 'an old session survived');
+    assert.equal((await httpCall(userAuth, { headers: bearer(changed.cookies.token) })).status, 'next');
+  });
+
+  await check('a token without a jti (pre-revocation format) is refused', async () => {
+    const jwt = (await import('jsonwebtoken')).default;
+    const legacy = jwt.sign({ id: uid }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    const res = await httpCall(userAuth, { headers: bearer(legacy) });
+    assert.equal(res.status, 401);
+  });
+
+  // --- Phase 2: proof of arrival -------------------------------------------
+  console.log('\nPhase 2: GPS and staff check-in');
+
+  const { requireStaff } = await import('../middleware/userAuth.js');
+  const { expirePendingBooking, confirmCheckIn, distanceMeters } = await import('../services/checkInService.js');
+
+  // A lot with real coordinates (Faculty of Science, KMITL — roughly).
+  const LOT = { latitude: 13.7299, longitude: 100.7782 };
+  const gpsZone = await ParkingZone.create({
+    zoneName: 'GPSLOT', name: 'ลาน GPS', totalSpots: 3, ...LOT, checkInRadiusMeters: 100,
+  });
+  await ParkingSpot.create(['G1', 'G2', 'G3'].map((n) => ({ name: n, spotNumber: n, zone: gpsZone._id })));
+
+  const makeDriver = async (email, username) => {
+    const driver = await User.create({ name: username, email, username, password: await bcrypt.hash('password123', 10) });
+    await PaymentMethod.create({ user: driver._id, type: 'promptpay', phoneNumber: '0811111111', isDefault: true });
+    await giveCar(driver._id);
+    const res = await call(bookingCtrl.createBooking, { body: { zoneId: gpsZone._id.toString() }, userId: driver._id.toString() });
+    assert.equal(res.status, 201, res.body.message);
+    return { id: driver._id.toString(), bookingId: res.body.data.bookingId.toString(), token: res.body.data.qrCode.token };
+  };
+
+  // ~0.0003° of latitude is ~33 m; 0.01° is ~1.1 km.
+  const near = { latitude: LOT.latitude + 0.0003, longitude: LOT.longitude, accuracy: 15 };
+  const far = { latitude: LOT.latitude + 0.01, longitude: LOT.longitude, accuracy: 15 };
+
+  const driver = await makeDriver('gps@test.com', 'gpsdriver');
+  const selfCheckIn = (body) => call(bookingCtrl.checkIn, { params: { bookingId: driver.bookingId }, body, userId: driver.id });
+
+  await check('the distance helper is accurate to a few metres', () => {
+    const d = distanceMeters(LOT, near);
+    assert.ok(d > 30 && d < 36, `got ${d}`);
+  });
+
+  await check('GPS self check-in requires a location', async () => {
+    const res = await selfCheckIn({});
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, 'location_required');
+  });
+
+  await check('an imprecise GPS fix is refused', async () => {
+    const res = await selfCheckIn({ ...near, accuracy: 500 });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, 'gps_inaccurate');
+  });
+
+  await check('checking in from 1 km away is refused', async () => {
+    const res = await selfCheckIn(far);
+    assert.equal(res.status, 403);
+    assert.equal(res.body.code, 'too_far');
+    assert.equal((await Booking.findById(driver.bookingId)).status, 'pending');
+  });
+
+  await check('checking in from inside the lot works and records where', async () => {
+    const res = await selfCheckIn(near);
+    assert.equal(res.status, 200, res.body.message);
+    const booking = await Booking.findById(driver.bookingId);
+    assert.equal(booking.status, 'confirmed');
+    assert.equal(booking.checkInMethod, 'gps');
+    assert.ok(booking.checkInLocation.distanceMeters < 100);
+    assert.equal((await ParkingSpot.findById(booking.spot)).status, 'occupied');
+  });
+
+  await check('the active booking tells the app which check-in methods exist', async () => {
+    const other = await makeDriver('opts@test.com', 'optsdriver');
+    const res = await call(bookingCtrl.getActiveBooking, { userId: other.id });
+    assert.deepEqual(
+      { staffScan: res.body.data.checkInOptions.staffScan, gps: res.body.data.checkInOptions.gps },
+      { staffScan: true, gps: true }
+    );
+    await call(bookingCtrl.cancelBooking, { params: { id: other.bookingId }, userId: other.id });
+  });
+
+  await check('staff cannot scan their own booking', async () => {
+    const own = await makeDriver('ownstaff@test.com', 'ownstaff');
+    await User.findByIdAndUpdate(own.id, { isStaff: true });
+    const res = await call(staffCtrl.scanCheckIn, { body: { qrPayload: own.token }, userId: own.id });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.code, 'own_booking');
+    await call(bookingCtrl.cancelBooking, { params: { id: own.bookingId }, userId: own.id });
+  });
+
+  await check('only staff and admins pass the staff guard', async () => {
+    const guard = (user) => httpCall((req, res, next) => { req.user = user; return requireStaff(req, res, next); });
+    assert.equal((await guard({ isStaff: false, isAdmin: false })).status, 403);
+    assert.equal((await guard({ isStaff: true })).status, 'next');
+    assert.equal((await guard({ isAdmin: true })).status, 'next');
+  });
+
+  await check('check-in and the auto-cancel sweep cannot both win', async () => {
+    const late = await makeDriver('late@test.com', 'latedriver');
+    await Booking.findByIdAndUpdate(late.bookingId, { checkInDeadline: new Date(Date.now() - 1000) });
+
+    // A check-in that lost the race must not resurrect an expired booking...
+    await assert.rejects(confirmCheckIn({ bookingId: late.bookingId, method: 'gps' }), /ไม่อยู่ในสถานะรอเช็คอิน/);
+
+    // ...and once the sweep has cancelled it, a second sweep changes nothing.
+    assert.ok(await expirePendingBooking(late.bookingId));
+    assert.equal(await expirePendingBooking(late.bookingId), null);
+
+    // Nor may a sweep cancel a booking that has already checked in.
+    assert.equal(await expirePendingBooking(driver.bookingId), null);
+    assert.equal((await Booking.findById(driver.bookingId)).status, 'confirmed');
+  });
+
+  await check('a lot location must be a real coordinate', async () => {
+    const bad = await call(staffCtrl.setZoneLocation, {
+      params: { id: gpsZone._id.toString() }, body: { latitude: 200, longitude: 0 },
+    });
+    assert.equal(bad.status, 400);
+    const off = await call(staffCtrl.setZoneLocation, { params: { id: gpsZone._id.toString() }, body: { clear: true } });
+    assert.equal(off.status, 200);
+    assert.equal(off.body.zone.gpsCheckIn, false);
+  });
+
+  // --- Phase 3: logic bugs ---------------------------------------------------
+  console.log('\nPhase 3: billing and membership logic');
+
+  const { default: Subscription } = await import('../models/subscriptionModel.js');
+  const parkingCtrl = await import('../controllers/parkingController.js');
+  const DAY = 24 * 60 * 60 * 1000;
+
+  // A driver who is checked in, `hours` ago, at the GPS lot.
+  const parkedDriver = async (email, username, hours) => {
+    const d = await makeDriver(email, username);
+    await confirmCheckIn({ bookingId: d.bookingId, method: 'gps' });
+    await Booking.findByIdAndUpdate(d.bookingId, { actualStartTime: new Date(Date.now() - hours * 3600 * 1000) });
+    return d;
+  };
+  const voucher = { percent: 50, code: 'HALF', expiresAt: new Date(Date.now() + DAY) };
+
+  await check('a voucher is not used up by a session inside the free hours', async () => {
+    const d = await parkedDriver('v1@test.com', 'voucher1', 1);
+    await User.findByIdAndUpdate(d.id, { activeDiscount: voucher });
+    const res = await call(bookingCtrl.checkOut, { params: { bookingId: d.bookingId }, userId: d.id });
+    assert.equal(res.status, 200, res.body.message);
+    assert.equal((await User.findById(d.id)).activeDiscount?.percent, 50, 'the voucher was burned for nothing');
+  });
+
+  await check('a voucher is spent when it actually discounts overtime', async () => {
+    const d = await parkedDriver('v2@test.com', 'voucher2', 4.5);
+    await User.findByIdAndUpdate(d.id, { activeDiscount: voucher });
+    const res = await call(bookingCtrl.checkOut, { params: { bookingId: d.bookingId }, userId: d.id });
+    assert.equal(res.status, 200, res.body.message);
+    assert.equal(res.body.data.pricing.voucherDiscount, 10);
+    assert.equal((await User.findById(d.id)).activeDiscount, null);
+  });
+
+  await check('check-out falls back to the default card if the booking\'s card was removed', async () => {
+    const d = await parkedDriver('pm@test.com', 'pmdriver', 4.5);
+    const used = (await Booking.findById(d.bookingId)).paymentMethod;
+    await PaymentMethod.findByIdAndUpdate(used, { status: 'inactive', isDefault: false });
+    await PaymentMethod.create({ user: d.id, type: 'truewallet', phoneNumber: '0822222222', isDefault: true });
+    const res = await call(bookingCtrl.checkOut, { params: { bookingId: d.bookingId }, userId: d.id });
+    assert.equal(res.status, 200, res.body.message);
+  });
+
+  const member = async (email, username, tier, days, extra = {}) => {
+    const u = await User.create({
+      name: username, email, username, password: 'h',
+      rank: tier === 'iron' ? 'Iron' : tier[0].toUpperCase() + tier.slice(1),
+      subscriptionExpiry: tier === 'iron' ? null : new Date(Date.now() + days * DAY),
+      ...extra,
+    });
+    if (tier !== 'iron') {
+      await Subscription.create({
+        user: u._id, tier, tierName: u.rank, price: 199, status: 'active',
+        startedAt: new Date(), expiresAt: u.subscriptionExpiry,
+      });
+    }
+    return u._id.toString();
+  };
+  const promo = (code, tier, days = 30) =>
+    PromoCode.create({ code, type: 'subscription', tier, durationDays: days, expiresAt: new Date(Date.now() + 30 * DAY) });
+
+  await check('a Predator redeeming a Diamond code keeps Predator (and keeps the code)', async () => {
+    const id = await member('pred@test.com', 'pred', 'predator', 20);
+    await promo('DIAPROMO', 'diamond', 30);
+    const res = await call(privilegesCtrl.redeemCode, { body: { code: 'DIAPROMO' }, userId: id });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'lower_tier_active');
+    const u = await User.findById(id);
+    assert.equal(u.rank, 'Predator', 'the paid tier was overwritten');
+    assert.equal((await PromoCode.findOne({ code: 'DIAPROMO' })).usedCount, 0, 'a refused code was used up');
+  });
+
+  await check('renewing the same tier stacks instead of resetting', async () => {
+    const id = await member('renew@test.com', 'renew', 'diamond', 10);
+    await promo('DIA30', 'diamond', 30);
+    const res = await call(privilegesCtrl.redeemCode, { body: { code: 'DIA30' }, userId: id });
+    assert.equal(res.status, 200, res.body.message);
+    const days = (new Date((await User.findById(id)).subscriptionExpiry) - Date.now()) / DAY;
+    assert.ok(days > 39.5 && days < 40.5, `expected ~40 days, got ${days.toFixed(1)}`);
+  });
+
+  await check('an upgrade keeps the lower tier, which resumes when the upgrade ends', async () => {
+    const id = await member('up@test.com', 'upgrader', 'diamond', 60);
+    await promo('PRED7', 'predator', 7);
+    const res = await call(privilegesCtrl.redeemCode, { body: { code: 'PRED7' }, userId: id });
+    assert.equal(res.status, 200, res.body.message);
+    assert.equal((await User.findById(id)).rank, 'Predator');
+
+    // Fast-forward: the Predator week is over.
+    await Subscription.updateOne({ user: id, tier: 'predator' }, { expiresAt: new Date(Date.now() - 1000) });
+    await expireLapsedSubscriptions();
+    const u = await User.findById(id);
+    assert.equal(u.rank, 'Diamond', 'the paid Diamond did not resume');
+    assert.ok(new Date(u.subscriptionExpiry) > new Date(Date.now() + 59 * DAY));
+  });
+
+  await check('a rank granted before subscriptions were tracked is not lost', async () => {
+    // Seeded/legacy: rank and expiry on the user, no Subscription row.
+    const legacy = await User.create({
+      name: 'L', email: 'legacy@test.com', username: 'legacy', password: 'h',
+      rank: 'Diamond', subscriptionExpiry: new Date(Date.now() + 30 * DAY),
+    });
+    await promo('PREDL', 'predator', 7);
+    const res = await call(privilegesCtrl.redeemCode, { body: { code: 'PREDL' }, userId: legacy._id.toString() });
+    assert.equal(res.status, 200, res.body.message);
+    await Subscription.updateOne({ user: legacy._id, tier: 'predator' }, { expiresAt: new Date(Date.now() - 1000) });
+    await expireLapsedSubscriptions();
+    assert.equal((await User.findById(legacy._id)).rank, 'Diamond');
+  });
+
+  await check('a password stored under the old escaping still logs in, and is repaired', async () => {
+    // What the old sanitiser hashed for a password typed "pass<word>1".
+    await User.create({
+      name: 'Esc', email: 'esc@test.com', username: 'escaped',
+      password: await bcrypt.hash('pass&lt;word&gt;1', 10),
+    });
+    const first = await httpCall(authCtrl.login, { body: { email: 'esc@test.com', password: 'pass<word>1' } });
+    assert.equal(first.status, 200);
+    const stored = (await User.findOne({ email: 'esc@test.com' }).select('+password')).password;
+    assert.ok(await bcrypt.compare('pass<word>1', stored), 'the hash was not upgraded to the real password');
+  });
+
+  await check('an admin cannot free a spot that a live booking holds', async () => {
+    const d = await makeDriver('held@test.com', 'helddriver');
+    const spotId = String((await Booking.findById(d.bookingId)).spot);
+    const res = await call(parkingCtrl.updateSpotStatus, { params: { id: spotId }, body: { status: 'available' } });
+    assert.equal(res.status, 409);
+    assert.equal((await ParkingSpot.findById(spotId)).status, 'reserved');
+    await call(bookingCtrl.cancelBooking, { params: { id: d.bookingId }, userId: d.id });
+  });
+
+  await check('total spent includes fees kept on cancelled bookings', async () => {
+    const d = await makeDriver('spent@test.com', 'spender');
+    await call(bookingCtrl.cancelBooking, { params: { id: d.bookingId }, userId: d.id });
+    const res = await call(userCtrl.getProfile, { userId: d.id });
+    assert.equal(res.body.stats.totalSpent, 20);
+  });
+
+  // --- Phase 4: missing features --------------------------------------------
+  console.log('\nPhase 4: vehicles, email verification, password reset, admin');
+
+  const { default: OTP } = await import('../models/otpModel.js');
+  const adminCtrl = await import('../controllers/adminController.js');
+
+  const bareDriver = async (email, username) => {
+    const u = await User.create({ name: username, email, username, password: await bcrypt.hash('password123', 10) });
+    await PaymentMethod.create({ user: u._id, type: 'promptpay', phoneNumber: '0833333333', isDefault: true });
+    return u._id.toString();
+  };
+  const bookGps = (userId, body = {}) =>
+    call(bookingCtrl.createBooking, { body: { zoneId: gpsZone._id.toString(), ...body }, userId });
+
+  await check('booking without a registered car is refused', async () => {
+    const id = await bareDriver('nocar@test.com', 'nocar');
+    const res = await bookGps(id);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, 'vehicle_required');
+    assert.equal(await Booking.countDocuments({ user: id }), 0);
+  });
+
+  await check('with no car chosen, the default car goes on the booking', async () => {
+    const id = await bareDriver('defcar@test.com', 'defcar');
+    const car = await giveCar(id);
+    const res = await bookGps(id);
+    assert.equal(res.status, 201, res.body.message);
+    assert.equal(String((await Booking.findById(res.body.data.bookingId)).vehicle), String(car._id));
+    await call(bookingCtrl.cancelBooking, { params: { id: res.body.data.bookingId }, userId: id });
+  });
+
+  await check('an unverified email blocks booking when verification is required', async () => {
+    const id = await bareDriver('unverified@test.com', 'unverified');
+    await giveCar(id);
+    process.env.REQUIRE_EMAIL_VERIFICATION = 'true';
+    try {
+      const res = await bookGps(id);
+      assert.equal(res.status, 403);
+      assert.equal(res.body.code, 'email_unverified');
+    } finally {
+      delete process.env.REQUIRE_EMAIL_VERIFICATION;
+    }
+  });
+
+  await check('OTP: resend has a cooldown, and a correct code verifies the email', async () => {
+    const id = await bareDriver('otp@test.com', 'otpuser');
+    assert.equal((await httpCall(authCtrl.sendVerifyOTP, { userId: id })).status, 200);
+    const again = await httpCall(authCtrl.sendVerifyOTP, { userId: id });
+    assert.equal(again.status, 429);
+    assert.equal(again.body.code, 'otp_cooldown');
+
+    // Swap in a code we know (the real one only went to the mail log).
+    await OTP.deleteMany({ userId: id });
+    await OTP.create({ userId: id, otp: '424242', type: 'ACCOUNT_VERIFICATION' });
+    assert.equal((await httpCall(authCtrl.verifyEmail, { userId: id, body: { otp: '111111' } })).status, 400);
+    assert.equal((await httpCall(authCtrl.verifyEmail, { userId: id, body: { otp: '424242' } })).status, 200);
+    assert.equal((await User.findById(id)).isAccountVerified, true);
+  });
+
+  await check('forgot-password answers the same for unknown and known emails', async () => {
+    const unknown = await httpCall(authCtrl.forgotPassword, { body: { email: 'nobody@test.com' } });
+    const known = await httpCall(authCtrl.forgotPassword, { body: { email: 'owner@test.com' } });
+    assert.equal(unknown.status, 200);
+    assert.deepEqual(unknown.body, known.body, 'the reply reveals whether the account exists');
+    const owner = await User.findOne({ email: 'owner@test.com' });
+    assert.ok(await OTP.exists({ userId: owner._id, type: 'PASSWORD_RESET' }), 'no reset code was issued');
+  });
+
+  await check('a reset code locks after 5 wrong guesses', async () => {
+    const owner = await User.findOne({ email: 'owner@test.com' });
+    await OTP.deleteMany({ userId: owner._id });
+    await OTP.create({ userId: owner._id, otp: '135790', type: 'PASSWORD_RESET' });
+    let last;
+    for (let i = 0; i < 5; i++) {
+      last = await httpCall(authCtrl.resetPassword, { body: { email: 'owner@test.com', otp: '000000', newPassword: 'whatever123' } });
+    }
+    assert.equal(last.body.code, 'otp_locked');
+    // The right code no longer works either: it was discarded.
+    const late = await httpCall(authCtrl.resetPassword, { body: { email: 'owner@test.com', otp: '135790', newPassword: 'whatever123' } });
+    assert.equal(late.status, 400);
+  });
+
+  await check('a password reset works and signs out every existing session', async () => {
+    const owner = await User.findOne({ email: 'owner@test.com' });
+    const before = (await httpCall(authCtrl.login, { body: { email: 'owner@test.com', password: 'victimpass2' } })).cookies.token;
+    assert.ok(before, 'precondition: could not log in');
+
+    await OTP.deleteMany({ userId: owner._id });
+    await OTP.create({ userId: owner._id, otp: '246810', type: 'PASSWORD_RESET' });
+    const res = await httpCall(authCtrl.resetPassword, { body: { email: 'owner@test.com', otp: '246810', newPassword: 'brandnew123' } });
+    assert.equal(res.status, 200, res.body.message);
+
+    assert.equal((await httpCall(userAuth, { headers: bearer(before) })).status, 401, 'an old session survived the reset');
+    assert.equal((await httpCall(authCtrl.login, { body: { email: 'owner@test.com', password: 'brandnew123' } })).status, 200);
+  });
+
+  const adminId = (await User.create({ name: 'Boss', email: 'boss@test.com', username: 'boss', password: 'h', isAdmin: true }))._id.toString();
+
+  await check('an admin can cancel a held booking, and the spot is freed', async () => {
+    const d = await makeDriver('abandon@test.com', 'abandoner');
+    const res = await call(adminCtrl.adminCancelBooking, { params: { id: d.bookingId }, body: { note: 'ไม่มาตามนัด' }, userId: adminId });
+    assert.equal(res.status, 200, res.body.message);
+    const b = await Booking.findById(d.bookingId);
+    assert.equal(b.status, 'cancelled');
+    assert.equal(b.cancelReason, 'admin_cancelled');
+    assert.equal(String(b.closedBy), adminId);
+    assert.equal((await ParkingSpot.findById(b.spot)).status, 'available');
+  });
+
+  await check('force check-out frees the bay even when the card is declined, and records the debt', async () => {
+    const d = await parkedDriver('stuck@test.com', 'stuck', 5);
+    await PaymentMethod.updateMany({ user: d.id }, { status: 'inactive' }); // nothing chargeable left
+
+    // The driver's own check-out is refused (Test Case 11) ...
+    assert.equal((await call(bookingCtrl.checkOut, { params: { bookingId: d.bookingId }, userId: d.id })).status, 402);
+
+    // ... but an admin can close it.
+    const res = await call(adminCtrl.forceCheckout, { params: { id: d.bookingId }, userId: adminId });
+    assert.equal(res.status, 200, res.body.message);
+    assert.equal(res.body.data.settled, false);
+
+    const b = await Booking.findById(d.bookingId);
+    assert.equal(b.status, 'completed');
+    assert.equal(b.paymentStatus, 'failed');
+    assert.ok(b.cost > 0);
+    assert.equal((await ParkingSpot.findById(b.spot)).status, 'available');
+
+    const unpaid = await call(adminCtrl.listBookings, { query: { status: 'unpaid' } });
+    assert.ok(unpaid.body.bookings.some((x) => String(x.id) === d.bookingId), 'the debt is not listed');
+  });
+
+  await check('admins can search bookings by plate and grant the staff role', async () => {
+    const d = await makeDriver('findme@test.com', 'findme');
+    const plate = (await Vehicle.findOne({ userId: d.id })).licensePlate;
+    const found = await call(adminCtrl.listBookings, { query: { status: 'active', q: plate } });
+    assert.equal(found.body.bookings.length, 1);
+    assert.equal(found.body.bookings[0].vehicle.licensePlate, plate);
+
+    const granted = await call(adminCtrl.setStaff, { params: { id: d.id }, body: { isStaff: true } });
+    assert.equal(granted.status, 200);
+    assert.equal((await User.findById(d.id)).isStaff, true);
+    assert.equal((await call(adminCtrl.setStaff, { params: { id: d.id }, body: { isStaff: 'yes' } })).status, 400);
+  });
+
+  // --- Points ---------------------------------------------------------------
+  console.log('\nPoints: earning, rewards and the ledger');
+
+  const { default: PointTransaction } = await import('../models/pointTransactionModel.js');
+  const pointsSvc = await import('../services/pointsService.js');
+  const pointsCtrl = await import('../controllers/pointsController.js');
+  const redeemPts = (userId, rewardId) => call(pointsCtrl.redeem, { body: { rewardId }, userId });
+  const withPoints = async (email, username, points, extra = {}) => {
+    const id = await bareDriver(email, username);
+    await giveCar(id);
+    await User.findByIdAndUpdate(id, { points, ...extra });
+    return id;
+  };
+
+  await check('points reward showing up and leaving on time, not hours parked', () => {
+    const { pointsForSession, TIERS } = pricing;
+    assert.equal(pointsForSession({ durationHours: 1, tier: TIERS.iron }), 15, 'on time: base + bonus');
+    assert.equal(pointsForSession({ durationHours: 8, tier: TIERS.iron }), 10, 'a long stay must not earn more');
+    assert.equal(pointsForSession({ durationHours: 1, tier: TIERS.diamond }), 22);
+    assert.equal(pointsForSession({ durationHours: 1, tier: TIERS.predator }), 30);
+  });
+
+  await check('check-out earnings go through the ledger', async () => {
+    const d = await parkedDriver('earn@test.com', 'earner', 1);
+    const res = await call(bookingCtrl.checkOut, { params: { bookingId: d.bookingId }, userId: d.id });
+    assert.equal(res.status, 200, res.body.message);
+    assert.equal(res.body.data.pointsEarned, 15);
+    assert.equal(res.body.data.totalPoints, 15);
+    const row = await PointTransaction.findOne({ user: d.id, reason: 'session' });
+    assert.equal(row?.delta, 15);
+    assert.equal(String(row.booking), d.bookingId);
+  });
+
+  await check('a reward you cannot afford costs nothing', async () => {
+    const id = await withPoints('poor@test.com', 'poor', 100);
+    const res = await redeemPts(id, 'free_booking');
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'insufficient_points');
+    assert.equal((await User.findById(id)).points, 100);
+  });
+
+  await check('two redemptions at once cannot overdraw the balance', async () => {
+    const id = await withPoints('race2@test.com', 'racer2', 150); // enough for exactly one
+    const results = await Promise.all([redeemPts(id, 'free_booking'), redeemPts(id, 'free_booking')]);
+    assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+    const u = await User.findById(id);
+    assert.equal(u.points, 0);
+    assert.equal(u.freeBookingCredits, 1);
+  });
+
+  await check('a free-booking credit waives the fee once, and is used up', async () => {
+    const id = await withPoints('free@test.com', 'freebie', 0, { freeBookingCredits: 1 });
+    const first = await bookGps(id, { useFreeBooking: true });
+    assert.equal(first.status, 201, first.body.message);
+    assert.equal(first.body.data.payment.amount, 0);
+    const booking = await Booking.findById(first.body.data.bookingId);
+    assert.equal(booking.bookingFee, 0);
+    assert.equal(booking.feeWaiver, 'free_booking_credit');
+    assert.equal((await User.findById(id)).freeBookingCredits, 0);
+
+    await call(bookingCtrl.cancelBooking, { params: { id: first.body.data.bookingId }, userId: id });
+    const second = await bookGps(id, { useFreeBooking: true });
+    assert.equal(second.status, 409);
+    assert.equal(second.body.code, 'no_free_booking_credit');
+  });
+
+  await check('a booking that fails gives the free-booking credit back', async () => {
+    const id = await withPoints('refund@test.com', 'refundee', 0, { freeBookingCredits: 1 });
+    await PaymentMethod.updateMany({ user: id }, { status: 'inactive' }); // booking will fail
+    const res = await bookGps(id, { useFreeBooking: true });
+    assert.equal(res.status, 402);
+    assert.equal((await User.findById(id)).freeBookingCredits, 1, 'the credit was lost with the failed booking');
+  });
+
+  await check('an overtime voucher cannot be stacked on an unused one', async () => {
+    const id = await withPoints('vouch@test.com', 'voucher3', 200);
+    assert.equal((await redeemPts(id, 'overtime_voucher')).status, 200);
+    const again = await redeemPts(id, 'overtime_voucher');
+    assert.equal(again.status, 409);
+    assert.equal((await User.findById(id)).points, 120, 'the refused voucher was charged');
+  });
+
+  await check('a Diamond trial is refused (free of charge) for a Predator', async () => {
+    const id = await withPoints('predpts@test.com', 'predpts', 500);
+    await Subscription.create({
+      user: id, tier: 'predator', tierName: 'Predator', price: 399, status: 'active',
+      startedAt: new Date(), expiresAt: new Date(Date.now() + 10 * DAY),
+    });
+    const res = await redeemPts(id, 'diamond_trial');
+    assert.equal(res.status, 409);
+    assert.equal((await User.findById(id)).points, 500);
+  });
+
+  await check('a Diamond trial makes an Iron member Diamond for 7 days', async () => {
+    const id = await withPoints('trial@test.com', 'trialist', 400);
+    const res = await redeemPts(id, 'diamond_trial');
+    assert.equal(res.status, 200, res.body.message);
+    const u = await User.findById(id);
+    assert.equal(u.rank, 'Diamond');
+    assert.equal(u.points, 0);
+    const days = (new Date(u.subscriptionExpiry) - Date.now()) / DAY;
+    assert.ok(days > 6.9 && days < 7.1);
+  });
+
+  await check('"points" promo codes are recorded in the ledger', async () => {
+    const id = await withPoints('promopts@test.com', 'promopts', 0);
+    await PromoCode.create({ code: 'PTS100', type: 'points', points: 100, expiresAt: new Date(Date.now() + DAY) });
+    assert.equal((await call(privilegesCtrl.redeemCode, { body: { code: 'PTS100' }, userId: id })).status, 200);
+    assert.equal((await User.findById(id)).points, 100);
+    assert.ok(await PointTransaction.exists({ user: id, reason: 'promo_code', delta: 100 }));
+  });
+
+  await check('points lapse after a year with no activity, and only then', async () => {
+    const stale = await withPoints('stale@test.com', 'stale', 70, { pointsActivityAt: new Date(Date.now() - 400 * DAY) });
+    const fresh = await withPoints('fresh@test.com', 'freshpts', 70, { pointsActivityAt: new Date(Date.now() - 30 * DAY) });
+    await pointsSvc.expireInactivePoints();
+    assert.equal((await User.findById(stale)).points, 0);
+    assert.equal((await User.findById(fresh)).points, 70);
+    assert.ok(await PointTransaction.exists({ user: stale, reason: 'expired', delta: -70 }));
+  });
+
+  await check('the points endpoint lists rules, rewards and history', async () => {
+    const id = await withPoints('view@test.com', 'viewer', 0);
+    await pointsSvc.addPoints({ userId: id, amount: 40, reason: 'admin_adjust' });
+    const res = await call(pointsCtrl.getPoints, { userId: id });
+    assert.equal(res.body.balance, 40);
+    assert.equal(res.body.rewards.length, pricing.REWARD_LIST.length);
+    assert.equal(res.body.history[0].delta, 40);
+    assert.ok(res.body.expiresAt, 'no expiry date reported');
+  });
+
+  // --- Cloud-native: stateless app tier ----------------------------------
+  console.log('\nCloud: shared state, job locks, S3 media');
+
+  const { MongoRateLimitStore } = await import('../utils/mongoRateLimitStore.js');
+  const { runExclusive } = await import('../utils/jobLock.js');
+  const media = await import('../services/mediaService.js');
+  const photoCtrl = await import('../controllers/vehiclePhotoController.js');
+
+  await check('two instances share one rate-limit counter', async () => {
+    // Two store objects = two app instances behind the load balancer.
+    const a = new MongoRateLimitStore('smoke');
+    const b = new MongoRateLimitStore('smoke');
+    a.init({ windowMs: 60_000 });
+    b.init({ windowMs: 60_000 });
+    await a.increment('1.2.3.4');
+    await b.increment('1.2.3.4');
+    const third = await a.increment('1.2.3.4');
+    assert.equal(third.totalHits, 3, 'instances counted separately');
+    await b.decrement('1.2.3.4');
+    assert.equal((await a.increment('1.2.3.4')).totalHits, 3);
+  });
+
+  await check('a rate-limit window resets once it has passed', async () => {
+    const s = new MongoRateLimitStore('smoke-short');
+    s.init({ windowMs: 150 });
+    await s.increment('k');
+    await s.increment('k');
+    await new Promise((r) => setTimeout(r, 250));
+    assert.equal((await s.increment('k')).totalHits, 1);
+  });
+
+  await check('a scheduled job runs on one instance per lease', async () => {
+    let runs = 0;
+    const job = async () => { runs += 1; };
+    const results = await Promise.all([
+      runExclusive('smoke-job', 60_000, job),
+      runExclusive('smoke-job', 60_000, job),
+      runExclusive('smoke-job', 60_000, job),
+    ]);
+    assert.equal(runs, 1, `ran ${runs} times`);
+    assert.equal(results.filter((r) => r.ran).length, 1);
+    // An expired lease can be taken again.
+    await mongoose.connection.collection('joblocks').updateOne({ _id: 'smoke-job' }, { $set: { lockedUntil: new Date(0) } });
+    assert.equal((await runExclusive('smoke-job', 60_000, job)).ran, true);
+  });
+
+  await check('S3 photo upload: presigned POST, ownership check, confirm', async () => {
+    const { S3Client } = await import('@aws-sdk/client-s3');
+    process.env.MEDIA_BUCKET = 'smoke-media';
+    process.env.AWS_REGION = 'ap-southeast-1';
+    const fakeObjects = new Map();
+    const fake = new S3Client({ region: 'ap-southeast-1', credentials: { accessKeyId: 'AKIAFAKE', secretAccessKey: 'fake' } });
+    fake.send = async (cmd) => {
+      const name = cmd.constructor.name;
+      if (name === 'HeadObjectCommand') {
+        const obj = fakeObjects.get(cmd.input.Key);
+        if (!obj) throw Object.assign(new Error('NotFound'), { name: 'NotFound' });
+        return obj;
+      }
+      if (name === 'DeleteObjectCommand') { fakeObjects.delete(cmd.input.Key); return {}; }
+      throw new Error(`unexpected ${name}`);
+    };
+    media.setS3Client(fake);
+
+    try {
+      const owner = await bareDriver('photo@test.com', 'photographer');
+      const car = await giveCar(owner);
+      const params = { id: String(car._id) };
+
+      const bad = await call(photoCtrl.requestPhotoUpload, { params, body: { contentType: 'application/pdf' }, userId: owner });
+      assert.equal(bad.status, 400);
+
+      const up = await call(photoCtrl.requestPhotoUpload, { params, body: { contentType: 'image/jpeg' }, userId: owner });
+      assert.equal(up.status, 200, up.body.message);
+      const { url, fields, key } = up.body.upload;
+      assert.match(url, /smoke-media/);
+      assert.ok(key.startsWith(`vehicles/${owner}/${car._id}/`), key);
+      assert.equal(fields['Content-Type'], 'image/jpeg');
+      assert.ok(fields.Policy && fields['X-Amz-Signature'], 'the POST is not signed');
+
+      // Confirming before the file exists is refused.
+      assert.equal((await call(photoCtrl.confirmPhoto, { params, body: { key }, userId: owner })).status, 400);
+
+      // Someone else's key is refused even if the file exists.
+      const stranger = await bareDriver('stranger@test.com', 'stranger');
+      const strangerCar = await giveCar(stranger);
+      fakeObjects.set(key, { ContentType: 'image/jpeg', ContentLength: 1000 });
+      const theft = await call(photoCtrl.confirmPhoto, { params: { id: String(strangerCar._id) }, body: { key }, userId: stranger });
+      assert.equal(theft.status, 400);
+
+      const ok = await call(photoCtrl.confirmPhoto, { params, body: { key }, userId: owner });
+      assert.equal(ok.status, 200, ok.body.message);
+      assert.match(ok.body.photoUrl, /X-Amz-Signature/);
+      assert.equal((await Vehicle.findById(car._id)).photoKey, key);
+
+      // The staff scan shows the photo next to the plate.
+      const d = await bookGps(owner);
+      assert.equal(d.status, 201, d.body.message);
+      const scan = await call(staffCtrl.scanCheckIn, { body: { qrPayload: d.body.data.qrCode.token }, userId: staffId });
+      assert.equal(scan.status, 200, scan.body.message);
+      assert.match(scan.body.data.vehicle.photoUrl, /smoke-media/);
+    } finally {
+      delete process.env.MEDIA_BUCKET;
+      media.setS3Client(null);
+    }
+  });
+
+  await check('without a bucket configured, photo upload answers 503, not 500', async () => {
+    const id = await bareDriver('nobucket@test.com', 'nobucket');
+    const car = await giveCar(id);
+    const res = await call(photoCtrl.requestPhotoUpload, { params: { id: String(car._id) }, body: { contentType: 'image/png' }, userId: id });
+    assert.equal(res.status, 503);
+  });
+
+  await check('JSON logs are one parseable object per line', async () => {
+    const { logEvent } = await import('../utils/logger.js');
+    const lines = [];
+    const original = console.log;
+    process.env.LOG_FORMAT = 'json';
+    console.log = (line) => lines.push(line);
+    try {
+      logEvent('booking_created', { zone: 'A' });
+    } finally {
+      console.log = original;
+      delete process.env.LOG_FORMAT;
+    }
+    const parsed = JSON.parse(lines[0]);
+    assert.equal(parsed.event, 'booking_created');
+    assert.equal(parsed.zone, 'A');
+    assert.ok(parsed.ts);
   });
 
   // --- Teardown -----------------------------------------------------------

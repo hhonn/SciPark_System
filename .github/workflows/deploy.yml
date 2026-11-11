@@ -1,0 +1,119 @@
+# Push to main -> test -> publish the backend release -> rolling replacement of
+# the app instances with no downtime -> publish the frontend -> verify.
+#
+# One-time setup (see infra/README.md):
+#   repository variables  AWS_REGION, AWS_DEPLOY_ROLE_ARN, STACK_NAME
+# There are no AWS keys in GitHub: the job assumes AWS_DEPLOY_ROLE_ARN through
+# OpenID Connect and gets credentials that last one hour.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "frontend/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # for the OIDC token
+
+# One deploy at a time; a newer push waits instead of interrupting a rollout.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: test
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK_NAME: ${{ vars.STACK_NAME }}
+      RELEASE: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Read the stack's outputs
+        run: |
+          aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs" --output json > outputs.json
+          out() { jq -r --arg k "$1" '.[] | select(.OutputKey == $k) | .OutputValue' outputs.json; }
+          {
+            echo "ARTIFACTS_BUCKET=$(out ArtifactsBucketName)"
+            echo "SITE_BUCKET=$(out SiteBucketName)"
+            echo "DISTRIBUTION_ID=$(out DistributionId)"
+            echo "RELEASE_PARAM=$(out ReleaseParameterName)"
+            echo "ASG_NAME=$(out AutoScalingGroupName)"
+            echo "SITE_URL=$(out SiteUrl)"
+          } >> "$GITHUB_ENV"
+
+      # ---------------------------------------------------------- backend --
+      - name: Build the backend release
+        working-directory: backend
+        run: |
+          npm ci --omit=dev
+          tar --exclude=.env --exclude='./node_modules/.cache' -czf "$RUNNER_TEMP/release.tgz" .
+
+      - name: Upload it and make it the current release
+        run: |
+          aws s3 cp "$RUNNER_TEMP/release.tgz" "s3://$ARTIFACTS_BUCKET/releases/$RELEASE.tgz"
+          aws ssm put-parameter --name "$RELEASE_PARAM" --value "$RELEASE" --type String --overwrite
+
+      # Rolling update. MinHealthy 100 / MaxHealthy 200 = a new instance is
+      # launched and passes the load balancer health check before an old one is
+      # drained and terminated, so capacity never drops below what it was.
+      - name: Roll the app instances (zero downtime)
+        run: |
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --preferences '{"MinHealthyPercentage":100,"MaxHealthyPercentage":200,"InstanceWarmup":90,"SkipMatching":false}' \
+            --query InstanceRefreshId --output text)
+          echo "instance refresh $REFRESH_ID"
+          for i in $(seq 1 120); do
+            read -r STATUS PCT <<< "$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "$ASG_NAME" --instance-refresh-ids "$REFRESH_ID" \
+              --query 'InstanceRefreshes[0].[Status,PercentageComplete]' --output text)"
+            echo "$(date -u +%T) $STATUS ${PCT}%"
+            case "$STATUS" in
+              Successful) exit 0 ;;
+              Failed|Cancelled|RollbackSuccessful|RollbackFailed) echo "::error::instance refresh $STATUS"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::instance refresh timed out"; exit 1
+
+      # --------------------------------------------------------- frontend --
+      # After the backend, so a new page never calls an API that is not live yet.
+      - name: Build and publish the frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          # Hashed assets first (cache for a year), then the entry points
+          # (never cached), so no page can reference a file not yet uploaded.
+          aws s3 sync dist/assets "s3://$SITE_BUCKET/assets" --cache-control "public,max-age=31536000,immutable"
+          aws s3 sync dist "s3://$SITE_BUCKET" --exclude "assets/*" --cache-control "no-cache"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/index.html" "/" > /dev/null
+
+      - name: Verify the new release is serving
+        run: |
+          for i in $(seq 1 20); do
+            LIVE=$(curl -fsS "$SITE_URL/api/health" | jq -r .release || true)
+            echo "live release: $LIVE"
+            [ "$LIVE" = "$RELEASE" ] && exit 0
+            sleep 6
+          done
+          echo "::error::$SITE_URL is not serving $RELEASE"; exit 1

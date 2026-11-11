@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { HttpError, sendError } from "../utils/httpError.js";
 import PaymentMethod from "../models/paymentMethodModel.js";
 
 /** Luhn checksum — rejects typo'd card numbers before they reach the gateway. */
@@ -136,7 +137,6 @@ export const getPaymentMethods = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "เกิดข้อผิดพลาดในการดึงข้อมูลช่องทางการชำระเงิน",
-      error: error.message
     });
   }
 };
@@ -160,40 +160,40 @@ export const addPaymentMethod = async (req, res) => {
     // model, so it is checked against the schema enum rather than assumed.
     const validTypes = PaymentMethod.schema.path("type").enumValues;
     if (!validTypes.includes(type)) {
-      throw new Error(`ประเภทการชำระเงินไม่ถูกต้อง ต้องเป็น: ${validTypes.join(", ")}`);
+      throw new HttpError(400, `ประเภทการชำระเงินไม่ถูกต้อง ต้องเป็น: ${validTypes.join(", ")}`);
     }
 
     // Validate required fields based on type
     if (CARD_TYPES.includes(type)) {
       if (!req.body.cardNumber || !methodData.cardHolderName ||
           !methodData.expiryMonth || !methodData.expiryYear) {
-        throw new Error("กรุณากรอกข้อมูลบัตรให้ครบถ้วน");
+        throw new HttpError(400, "กรุณากรอกข้อมูลบัตรให้ครบถ้วน");
       }
       const digits = String(req.body.cardNumber).replace(/\s|-/g, '');
       if (!/^\d{13,19}$/.test(digits)) {
-        throw new Error("หมายเลขบัตรไม่ถูกต้อง");
+        throw new HttpError(400, "หมายเลขบัตรไม่ถูกต้อง");
       }
       if (!luhnValid(digits)) {
-        throw new Error("หมายเลขบัตรไม่ถูกต้อง");
+        throw new HttpError(400, "หมายเลขบัตรไม่ถูกต้อง");
       }
 
       const expiryProblem = checkExpiry(methodData.expiryMonth, methodData.expiryYear);
-      if (expiryProblem) throw new Error(expiryProblem);
+      if (expiryProblem) throw new HttpError(400, expiryProblem);
 
       // Keep only what is needed to show the user which card this is.
       methodData.cardLast4 = digits.slice(-4);
       methodData.cardBrand = detectBrand(digits);
     } else if (WALLET_TYPES.includes(type)) {
       if (!methodData.phoneNumber) {
-        throw new Error("กรุณากรอกเบอร์โทรศัพท์");
+        throw new HttpError(400, "กรุณากรอกเบอร์โทรศัพท์");
       }
       // Phone validation
       if (!/^0\d{9}$/.test(methodData.phoneNumber)) {
-        throw new Error("เบอร์โทรศัพท์ไม่ถูกต้อง");
+        throw new HttpError(400, "เบอร์โทรศัพท์ไม่ถูกต้อง");
       }
     } else if (type === 'bank_transfer') {
       if (!methodData.bankName || !methodData.accountNumber || !methodData.accountName) {
-        throw new Error("กรุณากรอกข้อมูลบัญชีธนาคารให้ครบถ้วน");
+        throw new HttpError(400, "กรุณากรอกข้อมูลบัญชีธนาคารให้ครบถ้วน");
       }
     }
 
@@ -234,12 +234,7 @@ export const addPaymentMethod = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Add payment method error:", error);
-    res.status(400).json({
-      success: false,
-      message: error.message || "เกิดข้อผิดพลาดในการเพิ่มช่องทางการชำระเงิน",
-      error: error.message
-    });
+    sendError(res, error, "เกิดข้อผิดพลาดในการเพิ่มช่องทางการชำระเงิน", "Add payment method error");
   } finally {
     await session.endSession();
   }
@@ -284,12 +279,12 @@ export const updatePaymentMethod = async (req, res) => {
           updateData.expiryMonth ?? method.expiryMonth,
           updateData.expiryYear ?? method.expiryYear
         );
-        if (expiryProblem) throw new Error(expiryProblem);
+        if (expiryProblem) throw new HttpError(400, expiryProblem);
       }
 
       if (updateData.phoneNumber !== undefined && WALLET_TYPES.includes(method.type)) {
         if (!/^0\d{9}$/.test(updateData.phoneNumber)) {
-          throw new Error("เบอร์โทรศัพท์ไม่ถูกต้อง");
+          throw new HttpError(400, "เบอร์โทรศัพท์ไม่ถูกต้อง");
         }
       }
 
@@ -323,12 +318,7 @@ export const updatePaymentMethod = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Update payment method error:", error);
-    res.status(error.statusCode || 400).json({
-      success: false,
-      message: error.message || "เกิดข้อผิดพลาดในการอัปเดตช่องทางการชำระเงิน",
-      error: error.message
-    });
+    sendError(res, error, "เกิดข้อผิดพลาดในการอัปเดตช่องทางการชำระเงิน", "Update payment method error");
   } finally {
     await session.endSession();
   }
@@ -408,7 +398,6 @@ export const deletePaymentMethod = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "เกิดข้อผิดพลาดในการลบช่องทางการชำระเงิน",
-      error: error.message
     });
   } finally {
     await session.endSession();
@@ -470,12 +459,7 @@ export const setDefaultPaymentMethod = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Set default payment method error:", error);
-    res.status(error.statusCode || 400).json({
-      success: false,
-      message: error.message || "เกิดข้อผิดพลาด",
-      error: error.message
-    });
+    sendError(res, error, "เกิดข้อผิดพลาด", "Set default payment method error");
   } finally {
     await session.endSession();
   }

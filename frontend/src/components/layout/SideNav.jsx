@@ -1,16 +1,17 @@
 import { NavLink } from 'react-router-dom'
-import { NAV_ITEMS } from './navItems'
+import { useNavItems } from './navItems'
 import { useBookingStore } from '../../stores/bookingStore'
 import { cn } from '../../utils/cn'
 
 /** Persistent rail at lg+. Below that the TabBar takes over. */
 const SideNav = () => {
   const activeBooking = useBookingStore((s) => s.activeBooking)
+  const items = useNavItems()
 
   return (
     <nav className="hidden lg:block w-56 shrink-0 py-6" aria-label="เมนูหลัก">
       <div className="sticky top-[calc(theme(spacing.topbar)+1.5rem)] space-y-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end, badgeKey }) => (
+        {items.map(({ to, label, icon: Icon, end, badgeKey }) => (
           <NavLink
             key={to}
             to={to}

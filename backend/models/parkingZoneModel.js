@@ -53,6 +53,28 @@ const parkingZoneSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // Real-world position of the lot, used for GPS self check-in. Unset means
+  // self check-in is off for this lot and only a staff QR scan can check in.
+  // An admin sets it by standing in the lot (see the staff screen).
+  latitude: {
+    type: Number,
+    default: null,
+    min: -90,
+    max: 90,
+  },
+  longitude: {
+    type: Number,
+    default: null,
+    min: -180,
+    max: 180,
+  },
+  // How far from that point a phone may be and still count as "here".
+  checkInRadiusMeters: {
+    type: Number,
+    default: 100,
+    min: 20,
+    max: 1000,
+  },
 }, { timestamps: true });
 
 // Index already created by unique: true on zoneName field

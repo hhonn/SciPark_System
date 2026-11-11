@@ -1,0 +1,1070 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  SciPark - smart parking reservation. CloudFront (S3 site + ALB API) -> EC2 Auto
+  Scaling across 2 AZs in private subnets -> MongoDB on EC2 in a private subnet.
+  Secrets in Secrets Manager, media in S3, logs/metrics/alarms in CloudWatch.
+
+# =============================================================================
+# Parameters
+# =============================================================================
+Parameters:
+  ProjectName:
+    Type: String
+    Default: scipark
+    AllowedPattern: "[a-z][a-z0-9-]{2,20}"
+  EnvName:
+    Type: String
+    Default: prod
+    AllowedPattern: "[a-z][a-z0-9]{1,10}"
+  VpcCidr:
+    Type: String
+    Default: 10.20.0.0/16
+
+  AppInstanceType:
+    Type: String
+    Default: t3.micro
+  AppMinSize:
+    Type: Number
+    Default: 1
+  AppDesiredCapacity:
+    Type: Number
+    Default: 2
+    Description: 2 = one instance per AZ (high availability). Lower to 1 to save cost.
+  AppMaxSize:
+    Type: Number
+    Default: 4
+
+  DbInstanceType:
+    Type: String
+    Default: t3.micro
+  DbPrivateIp:
+    Type: String
+    Default: 10.20.20.10
+    Description: Fixed private IP of the MongoDB instance (must be inside the first DB subnet).
+  DbVolumeSizeGiB:
+    Type: Number
+    Default: 10
+  NatInstanceType:
+    Type: String
+    Default: t4g.nano
+
+  AlertEmail:
+    Type: String
+    Description: Receives CloudWatch alarms and budget warnings.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 40
+    Description: Alerts at 50%, 80% and a forecast of 100%. See infra/README.md for the cost breakdown.
+  OriginVerifyValue:
+    Type: String
+    NoEcho: true
+    MinLength: 24
+    Description: Random secret CloudFront sends to the ALB (openssl rand -hex 24). Direct ALB requests without it get 403.
+  CloudFrontPrefixListId:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional. ID of the managed prefix list com.amazonaws.global.cloudfront.origin-facing in this region,
+      to let only CloudFront reach the ALB. Empty = open port 80, still guarded by OriginVerifyValue.
+
+  AppAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  NatAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Conditions:
+  RestrictAlbToCloudFront: !Not [!Equals [!Ref CloudFrontPrefixListId, ""]]
+
+# =============================================================================
+# Resources
+# =============================================================================
+Resources:
+  # ---------------------------------------------------------------- Network --
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-${EnvName}" }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: { VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway }
+
+  # Public: ALB + NAT instance. App: private, behind the ALB. Db: private, app-only.
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 64, 8]]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-public-a" }]
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 64, 8]]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-public-b" }]
+  AppSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Select [10, !Cidr [!Ref VpcCidr, 64, 8]]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-app-a" }]
+  AppSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Select [11, !Cidr [!Ref VpcCidr, 64, 8]]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-app-b" }]
+  DbSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Select [20, !Cidr [!Ref VpcCidr, 64, 8]]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-db-a" }]
+  DbSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Select [21, !Cidr [!Ref VpcCidr, 64, 8]]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-db-b" }]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-public" }]
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnetARoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicSubnetA, RouteTableId: !Ref PublicRouteTable }
+  PublicSubnetBRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicSubnetB, RouteTableId: !Ref PublicRouteTable }
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-private" }]
+  # Outbound internet for private instances (package installs, AWS APIs, SMTP)
+  # goes through the NAT instance. No inbound path exists.
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref NatInstance
+  AppSubnetARoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref AppSubnetA, RouteTableId: !Ref PrivateRouteTable }
+  AppSubnetBRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref AppSubnetB, RouteTableId: !Ref PrivateRouteTable }
+  DbSubnetARoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref DbSubnetA, RouteTableId: !Ref PrivateRouteTable }
+  DbSubnetBRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref DbSubnetB, RouteTableId: !Ref PrivateRouteTable }
+
+  # Free gateway endpoint: S3 traffic (releases, media) stays on the AWS network
+  # and does not go through the NAT instance.
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PrivateRouteTable]
+
+  # ---------------------------------------------------------- Security groups --
+  NatSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: NAT instance - forwards outbound traffic from the VPC
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: "-1", CidrIp: !Ref VpcCidr }
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB - HTTP from CloudFront only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - !If
+          - RestrictAlbToCloudFront
+          - { IpProtocol: tcp, FromPort: 80, ToPort: 80, SourcePrefixListId: !Ref CloudFrontPrefixListId }
+          - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0 }
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: App instances - port 3000 from the ALB only, no SSH
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 3000, ToPort: 3000, SourceSecurityGroupId: !Ref AlbSecurityGroup }
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MongoDB - 27017 from the app instances only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 27017, ToPort: 27017, SourceSecurityGroupId: !Ref AppSecurityGroup }
+
+  # -------------------------------------------------------------- NAT instance --
+  # A NAT instance instead of a NAT Gateway: ~US$4/month instead of ~US$35+, at
+  # the price of being a single, self-managed box (auto-recovered on failure).
+  NatRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore]
+  NatInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: { Roles: [!Ref NatRole] }
+  NatInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref NatAmiId
+      InstanceType: !Ref NatInstanceType
+      SubnetId: !Ref PublicSubnetA
+      SourceDestCheck: false
+      IamInstanceProfile: !Ref NatInstanceProfile
+      SecurityGroupIds: [!Ref NatSecurityGroup]
+      MetadataOptions: { HttpTokens: required }
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-nat" }]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          dnf install -y iptables-services
+          echo "net.ipv4.ip_forward = 1" > /etc/sysctl.d/90-nat.conf
+          sysctl -p /etc/sysctl.d/90-nat.conf
+          IFACE=$(ip route show default | awk '{print $5; exit}')
+          iptables -t nat -A POSTROUTING -o "$IFACE" -s ${VpcCidr} -j MASQUERADE
+          iptables -F FORWARD
+          service iptables save
+          systemctl enable --now iptables
+
+  # ------------------------------------------------------------------ Secrets --
+  # Generated at deploy time and never written into code or the template.
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "/${ProjectName}/${EnvName}/app"
+      Description: App settings loaded into the environment at boot (add EMAIL_USER / EMAIL_PASS here).
+      GenerateSecretString:
+        SecretStringTemplate: '{"REQUIRE_EMAIL_VERIFICATION":"false"}'
+        GenerateStringKey: JWT_SECRET
+        PasswordLength: 64
+        ExcludePunctuation: true
+  DbAppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "/${ProjectName}/${EnvName}/db-app"
+      Description: MongoDB user the application connects as.
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"scipark"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+  DbAdminSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "/${ProjectName}/${EnvName}/db-admin"
+      Description: MongoDB root user, for maintenance only (never given to the app).
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"admin"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  # ------------------------------------------------------------------ Storage --
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudFrontOnly
+            Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub "${SiteBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  # Named, so the CDN's Content-Security-Policy can name it without a cycle.
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-${EnvName}-media-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+      # Browsers upload with a presigned POST; the signature, not CORS, is the gate.
+      CorsConfiguration:
+        CorsRules:
+          - { AllowedMethods: [POST], AllowedOrigins: ["*"], AllowedHeaders: ["*"], MaxAge: 3000 }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: abort-incomplete, Status: Enabled, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }
+
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-old-releases, Status: Enabled, Prefix: releases/, ExpirationInDays: 60 }
+
+  # Which build the app instances run. CI writes it; instances read it at boot.
+  ReleaseParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${ProjectName}/${EnvName}/release"
+      Type: String
+      Value: none
+      Description: Git SHA of the backend release in the artifacts bucket.
+
+  # ---------------------------------------------------------------- Database --
+  DbRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: read-db-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref DbAppSecret, !Ref DbAdminSecret]
+              # One-off: restore a dump of the old database (see infra/README.md).
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${ArtifactsBucket.Arn}/migration/*"
+  DbInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: { Roles: [!Ref DbRole] }
+
+  # The data lives on its own volume: replacing the instance keeps the data, and
+  # deleting the stack leaves a final snapshot.
+  DbDataVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      AvailabilityZone: !GetAtt DbSubnetA.AvailabilityZone
+      Size: !Ref DbVolumeSizeGiB
+      VolumeType: gp3
+      Encrypted: true
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${EnvName}-mongo-data" }
+        - { Key: Backup, Value: !Sub "${ProjectName}-${EnvName}-daily" }
+
+  DbInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: PrivateDefaultRoute
+    CreationPolicy:
+      ResourceSignal: { Count: 1, Timeout: PT25M }
+    Properties:
+      ImageId: !Ref AppAmiId
+      InstanceType: !Ref DbInstanceType
+      SubnetId: !Ref DbSubnetA
+      PrivateIpAddress: !Ref DbPrivateIp
+      IamInstanceProfile: !Ref DbInstanceProfile
+      SecurityGroupIds: [!Ref DbSecurityGroup]
+      MetadataOptions: { HttpTokens: required }
+      Volumes: [{ Device: /dev/sdf, VolumeId: !Ref DbDataVolume }]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-${EnvName}-mongo" }]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          signal() { /opt/aws/bin/cfn-signal -e "$1" --stack ${AWS::StackName} --resource DbInstance --region ${AWS::Region} || true; }
+          trap 'signal 1' ERR
+          dnf install -y aws-cfn-bootstrap jq amazon-cloudwatch-agent
+
+          # --- data volume (nvme1n1 on Nitro), formatted only the first time
+          for i in $(seq 1 60); do [ -b /dev/nvme1n1 ] && break; sleep 2; done
+          blkid /dev/nvme1n1 || mkfs.xfs /dev/nvme1n1
+          mkdir -p /var/lib/mongo
+          UUID=$(blkid -s UUID -o value /dev/nvme1n1)
+          grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /var/lib/mongo xfs defaults,nofail 0 2" >> /etc/fstab
+          mount -a
+
+          # --- MongoDB 8.0
+          cat > /etc/yum.repos.d/mongodb-org-8.0.repo <<'REPO'
+          [mongodb-org-8.0]
+          name=MongoDB Repository
+          baseurl=https://repo.mongodb.org/yum/amazon/2023/mongodb-org/8.0/x86_64/
+          gpgcheck=1
+          enabled=1
+          gpgkey=https://pgp.mongodb.com/server-8.0.asc
+          REPO
+          dnf install -y mongodb-mongosh-shared-openssl3 || true
+          dnf install -y mongodb-org
+          chown -R mongod:mongod /var/lib/mongo
+
+          # A single-member replica set: transactions need one. The key file is
+          # required once auth is on; it is regenerated only if missing.
+          [ -f /var/lib/mongo/keyfile ] || openssl rand -base64 756 > /var/lib/mongo/keyfile
+          chmod 400 /var/lib/mongo/keyfile
+          chown mongod:mongod /var/lib/mongo/keyfile
+          cat > /etc/mongod.conf <<'CONF'
+          storage:
+            dbPath: /var/lib/mongo
+          systemLog:
+            destination: file
+            path: /var/log/mongodb/mongod.log
+            logAppend: true
+          net:
+            port: 27017
+            bindIp: 127.0.0.1,${DbPrivateIp}
+          replication:
+            replSetName: rs0
+          security:
+            authorization: enabled
+            keyFile: /var/lib/mongo/keyfile
+          processManagement:
+            timeZoneInfo: /usr/share/zoneinfo
+          CONF
+          systemctl enable --now mongod
+          for i in $(seq 1 60); do mongosh --quiet --eval "1" >/dev/null 2>&1 && break; sleep 2; done
+
+          # --- replica set + users (idempotent: safe on a re-provisioned box)
+          ADMIN=$(aws secretsmanager get-secret-value --region ${AWS::Region} --secret-id ${DbAdminSecret} --query SecretString --output text)
+          APP=$(aws secretsmanager get-secret-value --region ${AWS::Region} --secret-id ${DbAppSecret} --query SecretString --output text)
+          export ADMIN_USER=$(echo "$ADMIN" | jq -r .username) ADMIN_PASS=$(echo "$ADMIN" | jq -r .password)
+          export APP_USER=$(echo "$APP" | jq -r .username) APP_PASS=$(echo "$APP" | jq -r .password)
+          export DB_HOST=${DbPrivateIp}
+          cat > /root/mongo-bootstrap.js <<'JS'
+          const conn = new Mongo("mongodb://127.0.0.1:27017/?directConnection=true");
+          const admin = conn.getDB("admin");
+          let authed = false;
+          try { admin.auth(process.env.ADMIN_USER, process.env.ADMIN_PASS); authed = true; } catch (e) {}
+          const status = admin.runCommand({ replSetGetStatus: 1 });
+          if (status.ok !== 1 && status.code === 94) {
+            admin.runCommand({ replSetInitiate: { _id: "rs0", members: [{ _id: 0, host: process.env.DB_HOST + ":27017" }] } });
+          }
+          for (let i = 0; i < 60 && !admin.runCommand({ hello: 1 }).isWritablePrimary; i++) sleep(2000);
+          if (!authed) {
+            admin.createUser({ user: process.env.ADMIN_USER, pwd: process.env.ADMIN_PASS, roles: ["root"] });
+            admin.auth(process.env.ADMIN_USER, process.env.ADMIN_PASS);
+          }
+          if (!admin.getUser(process.env.APP_USER)) {
+            admin.createUser({
+              user: process.env.APP_USER,
+              pwd: process.env.APP_PASS,
+              roles: [{ role: "readWrite", db: "scipark" }, { role: "dbAdmin", db: "scipark" }],
+            });
+          }
+          print("mongo bootstrap ok");
+          JS
+          mongosh --quiet --nodb /root/mongo-bootstrap.js
+          rm -f /root/mongo-bootstrap.js
+
+          # --- ship mongod.log to CloudWatch Logs
+          cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CW'
+          { "logs": { "logs_collected": { "files": { "collect_list": [
+            { "file_path": "/var/log/mongodb/mongod.log", "log_group_name": "/${ProjectName}/${EnvName}/mongodb", "log_stream_name": "{instance_id}" }
+          ] } } } }
+          CW
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s \
+            -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+          signal 0
+
+  # Daily snapshots of the data volume, kept for 7 days.
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: dlm.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole]
+  DbBackupPolicy:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: !Sub "${ProjectName}-${EnvName} MongoDB daily snapshots"
+      State: ENABLED
+      ExecutionRoleArn: !GetAtt BackupRole.Arn
+      PolicyDetails:
+        ResourceTypes: [VOLUME]
+        TargetTags: [{ Key: Backup, Value: !Sub "${ProjectName}-${EnvName}-daily" }]
+        Schedules:
+          - Name: daily
+            CreateRule: { Interval: 24, IntervalUnit: HOURS, Times: ["19:00"] }
+            RetainRule: { Count: 7 }
+            CopyTags: true
+
+  # ----------------------------------------------------------------- App tier --
+  AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: scipark-app
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Least privilege: these two secrets, not the admin one.
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref AppSecret, !Ref DbAppSecret]
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectName}/${EnvName}/release"
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${ArtifactsBucket.Arn}/releases/*"
+              - Effect: Allow
+                Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
+                Resource: !Sub "${MediaBucket.Arn}/vehicles/*"
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: { Roles: [!Ref AppRole] }
+
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/app"
+      RetentionInDays: 14
+  DbLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/${EnvName}/mongodb"
+      RetentionInDays: 14
+
+  AppLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref AppAmiId
+        InstanceType: !Ref AppInstanceType
+        IamInstanceProfile: { Arn: !GetAtt AppInstanceProfile.Arn }
+        SecurityGroupIds: [!Ref AppSecurityGroup]
+        MetadataOptions: { HttpTokens: required, HttpPutResponseHopLimit: 1 }
+        TagSpecifications:
+          - ResourceType: instance
+            Tags: [{ Key: Name, Value: !Sub "${ProjectName}-${EnvName}-app" }]
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+            dnf install -y amazon-cloudwatch-agent tar xz
+
+            # --- Node.js 22 LTS from nodejs.org, checksum-verified
+            cd /tmp
+            BASE=https://nodejs.org/dist/latest-v22.x
+            curl -fsSLO $BASE/SHASUMS256.txt
+            TARBALL=$(awk '/linux-x64.tar.xz$/ {print $2}' SHASUMS256.txt)
+            curl -fsSLO $BASE/$TARBALL
+            grep " $TARBALL\$" SHASUMS256.txt | sha256sum -c -
+            mkdir -p /opt/node && tar -xJf $TARBALL -C /opt/node --strip-components=1
+
+            useradd --system --home /opt/scipark --shell /sbin/nologin scipark || true
+            mkdir -p /opt/scipark/releases /opt/scipark/bin /var/log/scipark
+            chown scipark:scipark /var/log/scipark
+
+            # --- non-secret config; secrets come from Secrets Manager at start
+            TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+            MD() { curl -sH "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/$1; }
+            cat > /etc/scipark.env <<ENV
+            NODE_ENV=production
+            PORT=3000
+            AWS_REGION=${AWS::Region}
+            APP_SECRET_ID=${AppSecret}
+            DB_SECRET_ID=${DbAppSecret}
+            MONGO_HOST=${DbPrivateIp}
+            MEDIA_BUCKET=${MediaBucket}
+            CLIENT_URL=https://${Distribution.DomainName}
+            TRUST_PROXY=2
+            COOKIE_SECURE=true
+            LOG_FORMAT=json
+            INSTANCE_ID=$(MD instance-id)
+            AVAILABILITY_ZONE=$(MD placement/availability-zone)
+            RELEASE_ID=none
+            ENV
+            chmod 640 /etc/scipark.env && chgrp scipark /etc/scipark.env
+
+            cat > /etc/systemd/system/scipark.service <<'UNIT'
+            [Unit]
+            Description=SciPark API
+            After=network-online.target
+            Wants=network-online.target
+            [Service]
+            User=scipark
+            EnvironmentFile=/etc/scipark.env
+            WorkingDirectory=/opt/scipark/current
+            ExecStart=/opt/node/bin/node /opt/scipark/current/server.js
+            Restart=always
+            RestartSec=3
+            KillSignal=SIGTERM
+            TimeoutStopSec=25
+            StandardOutput=append:/var/log/scipark/app.log
+            StandardError=append:/var/log/scipark/app.log
+            [Install]
+            WantedBy=multi-user.target
+            UNIT
+
+            # --- deploy = fetch the release named in SSM, switch, restart
+            cat > /opt/scipark/bin/deploy.sh <<DEPLOY
+            #!/bin/bash
+            set -euo pipefail
+            REL=\$(aws ssm get-parameter --region ${AWS::Region} --name ${ReleaseParameter} --query Parameter.Value --output text)
+            if [ "\$REL" = "none" ]; then echo "no release published yet"; exit 0; fi
+            DIR=/opt/scipark/releases/\$REL
+            if [ ! -d "\$DIR" ]; then
+              aws s3 cp --region ${AWS::Region} s3://${ArtifactsBucket}/releases/\$REL.tgz /tmp/release.tgz
+              mkdir -p "\$DIR" && tar -xzf /tmp/release.tgz -C "\$DIR" && rm -f /tmp/release.tgz
+            fi
+            ln -sfn "\$DIR" /opt/scipark/current
+            sed -i "s/^RELEASE_ID=.*/RELEASE_ID=\$REL/" /etc/scipark.env
+            chown -R scipark:scipark /opt/scipark
+            systemctl daemon-reload
+            systemctl enable scipark
+            systemctl restart scipark
+            DEPLOY
+            # Maintenance scripts with the production secrets, e.g. via SSM Session Manager:
+            #   sudo /opt/scipark/bin/run scripts/migrate.js --apply
+            cat > /opt/scipark/bin/run <<'RUN'
+            #!/bin/bash
+            set -a; . /etc/scipark.env; set +a
+            cd /opt/scipark/current && exec sudo -E -u scipark /opt/node/bin/node scripts/withSecrets.js "$@"
+            RUN
+            chmod +x /opt/scipark/bin/deploy.sh /opt/scipark/bin/run
+            /opt/scipark/bin/deploy.sh
+
+            cat > /etc/logrotate.d/scipark <<'ROT'
+            /var/log/scipark/app.log { daily rotate 3 compress missingok notifempty copytruncate }
+            ROT
+
+            # --- logs + memory/disk metrics (one series per ASG, not per box)
+            cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CW'
+            {
+              "agent": { "omit_hostname": true },
+              "logs": { "logs_collected": { "files": { "collect_list": [
+                { "file_path": "/var/log/scipark/app.log", "log_group_name": "${AppLogGroup}", "log_stream_name": "{instance_id}" }
+              ] } } },
+              "metrics": {
+                "namespace": "SciPark/Host",
+                "append_dimensions": { "AutoScalingGroupName": "${!aws:AutoScalingGroupName}" },
+                "aggregation_dimensions": [["AutoScalingGroupName"]],
+                "metrics_collected": {
+                  "mem": { "measurement": ["mem_used_percent"] },
+                  "disk": { "measurement": ["used_percent"], "resources": ["/"], "drop_device": true }
+                }
+              }
+            }
+            CW
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s \
+              -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      LoadBalancerAttributes:
+        - { Key: routing.http.drop_invalid_header_fields.enabled, Value: "true" }
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref Vpc
+      Protocol: HTTP
+      Port: 3000
+      TargetType: instance
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: "200" }
+      TargetGroupAttributes:
+        # In-flight requests get 20s to finish before an instance is removed.
+        - { Key: deregistration_delay.timeout_seconds, Value: "20" }
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      # Anything that did not come through CloudFront is refused.
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig: { StatusCode: "403", ContentType: text/plain, MessageBody: Forbidden }
+  FromCloudFrontRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpListener
+      Priority: 1
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig: { HttpHeaderName: X-Origin-Verify, Values: [!Ref OriginVerifyValue] }
+      Actions: [{ Type: forward, TargetGroupArn: !Ref AppTargetGroup }]
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: DbInstance
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT3M
+    Properties:
+      VPCZoneIdentifier: [!Ref AppSubnetA, !Ref AppSubnetB]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppLaunchTemplate
+        Version: !GetAtt AppLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref AppMinSize
+      MaxSize: !Ref AppMaxSize
+      DesiredCapacity: !Ref AppDesiredCapacity
+      TargetGroupARNs: [!Ref AppTargetGroup]
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      DefaultInstanceWarmup: 120
+      MetricsCollection: [{ Granularity: 1Minute }]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-${EnvName}-app", PropagateAtLaunch: true }]
+  CpuScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AppAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification: { PredefinedMetricType: ASGAverageCPUUtilization }
+        TargetValue: 60
+
+  # ---------------------------------------------------------------------- CDN --
+  SiteOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${ProjectName}-${EnvName}-site"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+  # SPA routing: paths without a file extension get index.html. Done here, not
+  # with a 404->index.html error page, which would also rewrite the API's 404s.
+  SpaRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${ProjectName}-${EnvName}-spa-rewrite"
+      AutoPublish: true
+      FunctionConfig: { Comment: SPA fallback to index.html, Runtime: cloudfront-js-2.0 }
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          if (request.uri.indexOf('.') === -1) request.uri = '/index.html';
+          return request;
+        }
+  SiteHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${ProjectName}-${EnvName}-site-headers"
+        SecurityHeadersConfig:
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !Sub >-
+              default-src 'self'; script-src 'self';
+              style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+              font-src 'self' https://fonts.gstatic.com data:;
+              img-src 'self' data: blob: https://${MediaBucket}.s3.${AWS::Region}.amazonaws.com;
+              connect-src 'self' https://${MediaBucket}.s3.${AWS::Region}.amazonaws.com;
+              object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';
+              upgrade-insecure-requests
+          ContentTypeOptions: { Override: true }
+          FrameOptions: { FrameOption: DENY, Override: true }
+          ReferrerPolicy: { ReferrerPolicy: strict-origin-when-cross-origin, Override: true }
+          StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true }
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${ProjectName}-${EnvName}"
+        HttpVersion: http2and3
+        PriceClass: PriceClass_200
+        DefaultRootObject: index.html
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt SiteOriginAccessControl.Id
+            S3OriginConfig: { OriginAccessIdentity: "" }
+          - Id: api
+            DomainName: !GetAtt LoadBalancer.DNSName
+            CustomOriginConfig: { OriginProtocolPolicy: http-only, HTTPPort: 80 }
+            OriginCustomHeaders: [{ HeaderName: X-Origin-Verify, HeaderValue: !Ref OriginVerifyValue }]
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+          ResponseHeadersPolicyId: !Ref SiteHeadersPolicy
+          FunctionAssociations:
+            - { EventType: viewer-request, FunctionARN: !GetAtt SpaRewriteFunction.FunctionMetadata.FunctionARN }
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+            Compress: true
+          - PathPattern: /health
+            TargetOriginId: api
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+  # ------------------------------------------------------------ Observability --
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription: [{ Protocol: email, Endpoint: !Ref AlertEmail }]
+
+  # Business metrics, extracted from the app's JSON logs. No SDK calls, no agent
+  # plugin: CloudWatch counts matching log lines.
+  MetricBookings:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.event = "booking_created" }'
+      MetricTransformations: [{ MetricNamespace: SciPark, MetricName: BookingsCreated, MetricValue: "1", DefaultValue: 0 }]
+  MetricCheckIns:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.event = "checkin" }'
+      MetricTransformations: [{ MetricNamespace: SciPark, MetricName: CheckIns, MetricValue: "1", DefaultValue: 0 }]
+  MetricCheckouts:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.event = "checkout" }'
+      MetricTransformations: [{ MetricNamespace: SciPark, MetricName: Checkouts, MetricValue: "1", DefaultValue: 0 }]
+  MetricPaymentDeclined:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.event = "payment_declined" }'
+      MetricTransformations: [{ MetricNamespace: SciPark, MetricName: PaymentsDeclined, MetricValue: "1", DefaultValue: 0 }]
+  MetricLoginFailed:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.event = "login_failed" }'
+      MetricTransformations: [{ MetricNamespace: SciPark, MetricName: LoginsFailed, MetricValue: "1", DefaultValue: 0 }]
+  MetricServerErrors:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.level = "error" }'
+      MetricTransformations: [{ MetricNamespace: SciPark, MetricName: ServerErrors, MetricValue: "1", DefaultValue: 0 }]
+
+  AlarmTarget5xx:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The API is returning server errors.
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions: [{ Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+  AlarmNoHealthyHosts:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: No healthy app instance behind the load balancer.
+      Namespace: AWS/ApplicationELB
+      MetricName: HealthyHostCount
+      Dimensions:
+        - { Name: LoadBalancer, Value: !GetAtt LoadBalancer.LoadBalancerFullName }
+        - { Name: TargetGroup, Value: !GetAtt AppTargetGroup.TargetGroupFullName }
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+  # The database box is a single instance: if its host fails, EC2 moves it to
+  # healthy hardware with the same IP and volume.
+  AlarmDbRecover:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MongoDB host failed its system status check - auto-recovering.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions: [{ Name: InstanceId, Value: !Ref DbInstance }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions: [!Sub "arn:aws:automate:${AWS::Region}:ec2:recover", !Ref AlertTopic]
+  AlarmNatRecover:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: NAT instance host failed its system status check - auto-recovering.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions: [{ Name: InstanceId, Value: !Ref NatInstance }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions: [!Sub "arn:aws:automate:${AWS::Region}:ec2:recover", !Ref AlertTopic]
+  AlarmDbCpu:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MongoDB CPU high for 15 minutes.
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions: [{ Name: InstanceId, Value: !Ref DbInstance }]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions: [!Ref AlertTopic]
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${ProjectName}-${EnvName}"
+      DashboardBody: !Sub
+        - |
+          {
+            "widgets": [
+              { "type": "metric", "x": 0, "y": 0, "width": 8, "height": 6, "properties": {
+                "title": "Requests and errors (ALB)", "region": "${AWS::Region}", "stat": "Sum", "period": 60,
+                "metrics": [
+                  ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "${Lb}"],
+                  [".", "HTTPCode_Target_5XX_Count", ".", "."],
+                  [".", "HTTPCode_Target_4XX_Count", ".", "."]
+                ] } },
+              { "type": "metric", "x": 8, "y": 0, "width": 8, "height": 6, "properties": {
+                "title": "Response time p95 (s)", "region": "${AWS::Region}", "period": 60,
+                "metrics": [["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${Lb}", { "stat": "p95" }]] } },
+              { "type": "metric", "x": 16, "y": 0, "width": 8, "height": 6, "properties": {
+                "title": "Healthy instances / in service", "region": "${AWS::Region}", "period": 60,
+                "metrics": [
+                  ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", "${Tg}", "LoadBalancer", "${Lb}", { "stat": "Minimum" }],
+                  ["AWS/AutoScaling", "GroupInServiceInstances", "AutoScalingGroupName", "${Asg}", { "stat": "Average" }]
+                ] } },
+              { "type": "metric", "x": 0, "y": 6, "width": 8, "height": 6, "properties": {
+                "title": "Bookings, check-ins, check-outs", "region": "${AWS::Region}", "stat": "Sum", "period": 300,
+                "metrics": [["SciPark", "BookingsCreated"], [".", "CheckIns"], [".", "Checkouts"]] } },
+              { "type": "metric", "x": 8, "y": 6, "width": 8, "height": 6, "properties": {
+                "title": "Failures", "region": "${AWS::Region}", "stat": "Sum", "period": 300,
+                "metrics": [["SciPark", "PaymentsDeclined"], [".", "LoginsFailed"], [".", "ServerErrors"]] } },
+              { "type": "metric", "x": 16, "y": 6, "width": 8, "height": 6, "properties": {
+                "title": "CPU and memory %", "region": "${AWS::Region}", "period": 60, "stat": "Average",
+                "metrics": [
+                  ["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", "${Asg}", { "label": "App CPU" }],
+                  ["AWS/EC2", "CPUUtilization", "InstanceId", "${Db}", { "label": "MongoDB CPU" }],
+                  ["SciPark/Host", "mem_used_percent", "AutoScalingGroupName", "${Asg}", { "label": "App memory" }]
+                ] } },
+              { "type": "log", "x": 0, "y": 12, "width": 24, "height": 6, "properties": {
+                "title": "Recent errors", "region": "${AWS::Region}", "view": "table",
+                "query": "SOURCE '${AppLogGroup}' | fields @timestamp, instance, context, message | filter level = 'error' | sort @timestamp desc | limit 20" } },
+              { "type": "log", "x": 0, "y": 18, "width": 24, "height": 6, "properties": {
+                "title": "Requests per instance (load balancing)", "region": "${AWS::Region}", "view": "bar",
+                "query": "SOURCE '${AppLogGroup}' | filter event = 'http' | stats count(*) as requests by instance, release" } }
+            ]
+          }
+        - Lb: !GetAtt LoadBalancer.LoadBalancerFullName
+          Tg: !GetAtt AppTargetGroup.TargetGroupFullName
+          Asg: !Ref AppAutoScalingGroup
+          Db: !Ref DbInstance
+
+  # ------------------------------------------------------------- Cost control --
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${ProjectName}-${EnvName}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudgetUsd, Unit: USD }
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 50 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+
+# =============================================================================
+Outputs:
+  SiteUrl:
+    Value: !Sub "https://${Distribution.DomainName}"
+  DistributionId:
+    Value: !Ref Distribution
+  SiteBucketName:
+    Value: !Ref SiteBucket
+  ArtifactsBucketName:
+    Value: !Ref ArtifactsBucket
+  MediaBucketName:
+    Value: !Ref MediaBucket
+  ReleaseParameterName:
+    Value: !Ref ReleaseParameter
+  AutoScalingGroupName:
+    Value: !Ref AppAutoScalingGroup
+  AppSecretArn:
+    Value: !Ref AppSecret
+  DbInstanceId:
+    Value: !Ref DbInstance
+  DashboardUrl:
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${ProjectName}-${EnvName}"

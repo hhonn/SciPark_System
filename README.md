@@ -1,15 +1,30 @@
 # SciPark
 
 ระบบจองที่จอดรถล่วงหน้าสำหรับคณะวิทยาศาสตร์ สจล. — ดูที่ว่างแบบเรียลไทม์ จองด้วยค่าธรรมเนียม
-20 บาท ระบบเลือกช่องจอดให้อัตโนมัติ แล้วสแกน QR เพื่อยืนยันการมาถึงภายใน 30 นาที
+20 บาท ระบบเลือกช่องจอดให้อัตโนมัติ แล้วยืนยันการมาถึงภายใน 30 นาที ด้วยการให้เจ้าหน้าที่สแกน QR หรือเช็คอินด้วย GPS เมื่ออยู่ในลาน
 
 ```
-React 18 + Vite 5 + Tailwind 3   →   Express 5 + Mongoose   →   MongoDB
+React 18 + Vite 8 + React Router 7 + Tailwind 3   →   Express 5 + Mongoose   →   MongoDB
 ```
 
 ---
 
+## บน AWS
+
+ระบบจริงรันบน AWS ตามสถาปัตยกรรมใน [`infra/README.md`](infra/README.md):
+CloudFront + S3 (หน้าเว็บ) → ALB → EC2 Auto Scaling 2 AZ (API, stateless) → MongoDB ใน private subnet
+พร้อม Secrets Manager, S3 สำหรับรูปรถ, CloudWatch dashboard/alarm และ CI/CD ด้วย GitHub Actions แบบ zero-downtime
+
+| ไฟล์ | คืออะไร |
+|---|---|
+| [`infra/scipark.yaml`](infra/scipark.yaml) | CloudFormation: ทั้งระบบในไฟล์เดียว |
+| [`infra/github-oidc.yaml`](infra/github-oidc.yaml) | สิทธิ์ให้ GitHub Actions deploy โดยไม่มี access key |
+| [`.github/workflows/`](.github/workflows) | `ci.yml` ทดสอบทุก push · `deploy.yml` deploy เมื่อ push เข้า main |
+| [`infra/scripts/`](infra/scripts) | สร้าง stack, scale, pause/resume, เดโม zero-downtime |
+
 ## เริ่มใช้งานใน 30 วินาที
+
+ต้องใช้ **Node.js 20.19+ หรือ 22.12+** (Vite 8 และ nodemailer รุ่นปัจจุบันต้องการ)
 
 ไม่ต้องติดตั้ง MongoDB ไม่ต้องสร้างไฟล์ `.env`:
 
@@ -50,10 +65,31 @@ npm run dev                  # http://localhost:5173
 | `npm run dev` | root | รัน backend + frontend พร้อมกัน |
 | `npm run dev:local` | backend | รันเซิร์ฟเวอร์กับ MongoDB in-memory (ไม่ต้องตั้งค่าอะไร) |
 | `npm run seed` | backend | ล้างและใส่ข้อมูลตัวอย่างลงฐานข้อมูล |
-| `npm run smoke` | backend | รันเทสต์ครอบคลุม booking lifecycle ทั้งหมด (27 เคส) |
+| `npm run smoke` | backend | รันเทสต์ครอบคลุม booking lifecycle ทั้งหมด (83 เคส) |
+| `npm run secure-seed` | backend | ปิดบัญชี/โปรโมโค้ดตัวอย่างบนฐานข้อมูลจริง (dry run ก่อน, `-- --apply` เพื่อทำจริง) |
+| `npm run migrate` | backend | แก้ข้อมูลเก่าในฐานข้อมูลจริง (dry run ก่อน, `-- --apply` เพื่อทำจริง) |
+| `npm run set-role` | backend | ตั้ง/ถอนสิทธิ์เจ้าหน้าที่สแกน: `-- staff <email>`, `-- unstaff <email>`, `-- list` |
 | `npm run auto-cancel` | backend | รันงานยกเลิกการจองที่หมดเวลาแบบครั้งเดียว |
 | `npm run build` | root | build frontend ลง `frontend/dist` |
 | `npm test` | backend | เทียบเท่า `npm run smoke` |
+
+## การเช็คอิน
+
+การยืนยันว่ามาถึงลานจริงทำได้ 2 ทาง:
+
+1. **เจ้าหน้าที่สแกน QR** — ผู้จองเปิด QR บนมือถือ เจ้าหน้าที่เปิดเมนู "สแกนเช็คอิน" (`/app/staff`) แล้วสแกนด้วยกล้อง ระบบแสดงป้ายทะเบียนให้ตรวจกับรถ ใช้ได้ทุกลาน
+2. **GPS** — ผู้จองกดเช็คอินเองได้เมื่ออยู่ในรัศมีของลาน (ค่าเริ่มต้น 100 ม. และ GPS ต้องแม่นยำไม่เกิน 100 ม.) ใช้ได้เฉพาะลานที่แอดมินตั้งพิกัดไว้: แอดมินเปิด `/app/staff` ไปยืนกลางลาน แล้วกด "ตั้งพิกัดจากตำแหน่งนี้"
+
+QR token ไม่สามารถใช้เช็คอินเองจากมือถือของผู้จองได้อีก (เดิมกดเช็คอินจากที่ไหนก็ได้) และเจ้าหน้าที่สแกนการจองของตัวเองไม่ได้
+ตั้งเจ้าหน้าที่ได้จากหน้า "ผู้ดูแลระบบ" (`/app/admin`) หรือ `npm run set-role -- staff <email>` (บัญชีต้องสมัครในแอปก่อน)
+
+การจองต้องมีรถลงทะเบียนไว้ (ใช้คันหลักถ้าไม่ได้เลือก) เพื่อให้เจ้าหน้าที่เทียบป้ายทะเบียนได้
+
+### การยืนยันอีเมล
+
+ถ้าตั้งค่า SMTP (`EMAIL_USER`/`EMAIL_PASS`) ไว้ ผู้ใช้ต้องยืนยันอีเมลก่อนจอง ถ้ายังไม่ตั้ง ระบบจะไม่บังคับ
+(เพราะไม่มีทางรับรหัสได้) บังคับเองได้ด้วย `REQUIRE_EMAIL_VERIFICATION=true|false`
+ระหว่างพัฒนา ถ้าไม่มี SMTP รหัส OTP จะแสดงใน log ของเซิร์ฟเวอร์ (ไม่แสดงเมื่อ `NODE_ENV=production`)
 
 ## กติกาของระบบ
 
@@ -71,10 +107,37 @@ npm run dev                  # http://localhost:5173
 
 ส่วนลดสมาชิกใช้กับ**ค่าจอดเกินเวลาเท่านั้น** ไม่ลดค่าธรรมเนียมการจอง
 
+การสมัคร/แลกโค้ดสมาชิก (`services/membershipService.js`):
+
+- **แพ็กเกจเดิม** — ต่อท้ายวันหมดอายุเดิม ไม่เริ่มนับใหม่
+- **แพ็กเกจสูงกว่า** — ได้ทันที แพ็กเกจเดิมยังอยู่และกลับมาใช้ต่อหลังแพ็กเกจใหม่หมด ถ้ายังเหลือวัน
+- **แพ็กเกจต่ำกว่า** — ปฏิเสธระหว่างที่แพ็กเกจสูงกว่ายังใช้อยู่ (ไม่ตัดเงิน และโปรโมโค้ดไม่ถูกใช้)
+- โค้ดส่วนลดค่าจอดเกินเวลาจะถูกใช้เฉพาะเมื่อลดเงินได้จริง
+
+### แต้มสะสม
+
+ตัวเลขทั้งหมดอยู่ใน `POINTS` / `REWARDS` ใน [`backend/config/pricing.js`](backend/config/pricing.js)
+ทุกการได้/ใช้แต้มถูกบันทึกในตาราง `PointTransaction`
+
+| ได้แต้ม | แต้ม |
+|---|---|
+| จองแล้วเช็คอินและเช็คเอาต์ (ชำระครบ) | 10 |
+| ออกภายใน 3 ชั่วโมงฟรี | +5 |
+| จองแล้วไม่มา | 0 |
+| ตัวคูณตามระดับ | Iron ×1 · Diamond ×1.5 · Predator ×2 |
+
+| แลกได้ | แต้ม |
+|---|---|
+| จองฟรี 1 ครั้ง (ไม่เสียค่าจอง) | 150 |
+| คูปองลดค่าจอดเกินเวลา 50% (30 วัน) | 80 |
+| ทดลอง Diamond 7 วัน (ต่อท้ายถ้าเป็นอยู่แล้ว ไม่ได้ถ้าเป็น Predator) | 400 |
+
+แต้มหมดอายุเมื่อไม่มีการได้หรือใช้แต้มเลย 365 วัน
+
 ### สถานะช่องจอด
 
 ```
-available  ──จอง──▶  reserved  ──สแกน QR──▶  occupied  ──เช็คเอาต์──▶  available
+available  ──จอง──▶  reserved  ──สแกน QR / GPS──▶  occupied  ──เช็คเอาต์──▶  available
                          │
                          └──ไม่มาใน 30 นาที / ยกเลิก──▶ available
 ```
@@ -125,8 +188,10 @@ POST   /api/auth/register          สมัครสมาชิก (รหั�
 POST   /api/auth/login             เข้าสู่ระบบ
 POST   /api/auth/logout            ออกจากระบบ
 GET    /api/auth/me                ข้อมูลผู้ใช้ปัจจุบัน
-POST   /api/auth/send-verify-otp   ส่ง OTP ไปอีเมล
-POST   /api/auth/verify-account    ยืนยันด้วย OTP
+POST   /api/auth/send-verify-otp   ส่ง OTP ไปอีเมล (ขอใหม่ได้ทุก 60 วินาที)
+POST   /api/auth/verify-account    ยืนยันด้วย OTP (ผิดได้ 5 ครั้งต่อรหัส)
+POST   /api/auth/forgot-password   ส่งรหัสตั้งรหัสผ่านใหม่ (ตอบเหมือนกันไม่ว่าอีเมลจะมีบัญชีหรือไม่)
+POST   /api/auth/reset-password    ตั้งรหัสผ่านใหม่ด้วยรหัสจากอีเมล และออกจากระบบทุกอุปกรณ์
 ```
 </details>
 
@@ -148,13 +213,28 @@ GET    /api/pricing                    ค่าธรรมเนียม เ�
 <summary><strong>Bookings</strong></summary>
 
 ```
-POST   /api/bookings                   จอง + เก็บค่าธรรมเนียม (402 ถ้าจ่ายไม่ผ่าน)
+POST   /api/bookings                   จอง + เก็บค่าธรรมเนียม (402 ถ้าจ่ายไม่ผ่าน) · { useFreeBooking: true } ใช้สิทธิ์จองฟรี
 GET    /api/bookings/active            การจองที่ใช้งานอยู่ + นับถอยหลัง
 GET    /api/bookings/history           ประวัติ (แบ่งหน้า)
 GET    /api/bookings/:id/qr            ออก QR ใหม่ (ของเดิมใช้ไม่ได้ทันที)
-PUT    /api/bookings/:id/checkin       เช็คอิน ต้องแนบ QR token
+PUT    /api/bookings/:id/checkin       เช็คอินเองด้วย GPS { latitude, longitude, accuracy } (เฉพาะลานที่ตั้งพิกัดแล้ว)
 PUT    /api/bookings/:id/checkout      เช็คเอาต์ คิดเงิน คืนช่องจอด
 DELETE /api/bookings/:id               ยกเลิก (เฉพาะก่อนเช็คอิน)
+```
+</details>
+
+<details>
+<summary><strong>เจ้าหน้าที่และผู้ดูแลระบบ</strong></summary>
+
+```
+POST   /api/staff/scan                 สแกน QR ของผู้จองเพื่อเช็คอิน (เจ้าหน้าที่/แอดมิน)
+GET    /api/staff/zones                ลานจอดและสถานะการเช็คอินด้วย GPS
+PUT    /api/staff/zones/:id/location   ตั้งพิกัด/รัศมีของลาน หรือ { clear: true } (แอดมินเท่านั้น)
+GET    /api/admin/bookings             การจองทั้งหมด ?status=active|pending|confirmed|unpaid|completed|cancelled&q=
+POST   /api/admin/bookings/:id/cancel  ยกเลิกการจองที่ค้าง คืนช่องจอด { note }
+POST   /api/admin/bookings/:id/force-checkout  เช็คเอาต์แทน ถ้าตัดเงินไม่ผ่านจะบันทึกเป็นค้างชำระ
+GET    /api/admin/users                รายชื่อผู้ใช้ ?q=
+PUT    /api/admin/users/:id/staff      ตั้ง/ถอนเจ้าหน้าที่ { isStaff }
 ```
 </details>
 
@@ -163,6 +243,8 @@ DELETE /api/bookings/:id               ยกเลิก (เฉพาะก่
 
 ```
 GET    /api/privileges                 แพ็กเกจสมาชิกและสถานะปัจจุบัน
+GET    /api/points                     แต้มคงเหลือ กติกา รางวัล และประวัติ
+POST   /api/points/redeem              แลกแต้ม { rewardId: free_booking | overtime_voucher | diamond_trial }
 POST   /api/privileges/subscribe       สมัครสมาชิก
 POST   /api/privileges/redeem          แลกโปรโมโค้ด
 GET    /api/vehicles                   ยานพาหนะ (POST/PUT/DELETE)
@@ -174,6 +256,8 @@ GET    /health                         สถานะเซิร์ฟเว�
 </details>
 
 ## บัญชีและโค้ดทดสอบ (หลัง `npm run seed`)
+
+> ⚠️ **ห้ามใช้บัญชีและโค้ดเหล่านี้บนเซิร์ฟเวอร์จริง** — รหัสผ่านถูกเผยแพร่อยู่ในไฟล์นี้ ถ้าเคยรัน `npm run seed` บน production ให้รัน `npm run secure-seed` (ดูก่อนแบบ dry run) แล้ว `npm run secure-seed -- --apply` เพื่อปิดบัญชีทดสอบ เปลี่ยนรหัสแอดมิน และปิดโปรโมโค้ดตัวอย่าง เซิร์ฟเวอร์จะเตือนใน log ทุกครั้งที่เปิดจนกว่าจะแก้
 
 | อีเมล | รหัสผ่าน | ระดับ |
 |---|---|---|
@@ -188,10 +272,15 @@ GET    /health                         สถานะเซิร์ฟเว�
 ## ความปลอดภัย
 
 - รหัสผ่านแฮชด้วย bcrypt และไม่ถูกส่งกลับไม่ว่ากรณีใด (`select: false`)
-- JWT อยู่ใน httpOnly cookie และรองรับ Authorization header
+- JWT อยู่ใน httpOnly cookie เท่านั้น (ไม่ส่งใน response body และไม่เก็บใน localStorage) รองรับ Authorization header สำหรับ API client
+- Logout เพิกถอน token จริง (เก็บ `jti` ไว้จนหมดอายุ) และการเปลี่ยนรหัสผ่านทำให้ทุกเซสชันเดิมใช้ไม่ได้
+- Username ห้ามมี `@` และเทียบแบบไม่สนตัวพิมพ์ ป้องกันการตั้ง username ให้ซ้อนอีเมลของคนอื่น
+- การจองของผู้ใช้คนเดียวกันถูก serialize ใน transaction จึงมีการจองที่ใช้งานอยู่ได้ครั้งละ 1 รายการแม้ยิงพร้อมกัน
+- ข้อความ error จากฐานข้อมูลไม่ถูกส่งถึงผู้ใช้ (`utils/httpError.js`)
 - helmet ตั้ง CSP, HSTS, `X-Content-Type-Options` ฯลฯ
 - Sanitizer ตัด Mongo operator (`$ne`, คีย์ที่มีจุด) และ escape markup ออกจากทุก request
-- Rate limit: 300 req/15 นาทีต่อ IP และ 10 ครั้ง/15 นาทีสำหรับ endpoint รหัสผ่าน
+- Rate limit: 300 req/15 นาทีต่อ IP, login ผิด 10 ครั้ง/15 นาทีต่อ (IP + บัญชี) และ 100 ครั้งต่อ IP สำหรับ endpoint รหัสผ่าน — ผู้ใช้ที่ใช้ IP เดียวกันทั้งวิทยาเขตจึงไม่ล็อกกันเอง
+- OTP สร้างด้วย `crypto.randomInt` และทิ้งเมื่อกรอกผิด 5 ครั้ง
 - **เก็บเลขบัตรเครดิตแค่ 4 ตัวท้าย** ไม่เก็บหมายเลขเต็มหรือ CVV
 - QR เก็บเป็นค่าแฮช ใช้ได้ครั้งเดียว และหมดอายุพร้อม deadline
 - เส้นทางของผู้ดูแลระบบต้องมี `isAdmin`

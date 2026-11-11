@@ -71,7 +71,7 @@ const Register = () => {
         password: form.password,
       })
 
-      login(data.user, data.token)
+      login(data.user)
       toast.success('สมัครสมาชิกสำเร็จ')
       navigate('/welcome', { replace: true })
     } catch (error) {

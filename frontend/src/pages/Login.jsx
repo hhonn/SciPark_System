@@ -45,7 +45,7 @@ const Login = () => {
         password: form.password,
       })
 
-      login(data.user, data.token)
+      login(data.user)
       toast.success(`ยินดีต้อนรับ ${data.user?.name || ''}`)
 
       // Return the user to whatever they were trying to reach.
@@ -100,6 +100,12 @@ const Login = () => {
               onChange={update('password')}
               error={errors.password}
             />
+
+            <div className="-mt-1 text-right">
+              <Link to="/forgot-password" className="text-small text-brand-600 hover:underline">
+                ลืมรหัสผ่าน?
+              </Link>
+            </div>
 
             <Button type="submit" size="lg" fullWidth loading={loading} iconRight={ArrowRight}>
               เข้าสู่ระบบ

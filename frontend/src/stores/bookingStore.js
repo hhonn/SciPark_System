@@ -7,16 +7,16 @@ import { create } from 'zustand'
  * localStorage, so a booking that had since been auto-cancelled server-side
  * kept showing as active — complete with a countdown — until the user hit
  * refresh. The server is the only authority on booking state.
+ *
+ * The QR token is no longer kept here: the user's own app never submits it.
+ * It lives only in the QR image, for a staff member to scan.
  */
 export const useBookingStore = create((set) => ({
   activeBooking: null,
-  /** Plain QR token, held in memory for the length of the session only. */
-  qrToken: null,
   loading: false,
 
   setActiveBooking: (booking) => set({ activeBooking: booking }),
-  setQrToken: (qrToken) => set({ qrToken }),
   setLoading: (loading) => set({ loading }),
 
-  clearActiveBooking: () => set({ activeBooking: null, qrToken: null }),
+  clearActiveBooking: () => set({ activeBooking: null }),
 }))

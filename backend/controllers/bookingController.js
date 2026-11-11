@@ -4,7 +4,14 @@ import ParkingSpot from "../models/parkingSpotModel.js";
 import ParkingZone from "../models/parkingZoneModel.js";
 import Vehicle from "../models/vehicleModel.js";
 import User from "../models/userModel.js";
-import { generateBookingQRCode, verifyScan } from "../services/qrCodeService.js";
+import { generateBookingQRCode } from "../services/qrCodeService.js";
+import {
+  MAX_GPS_ACCURACY_METERS,
+  distanceMeters,
+  zoneHasLocation,
+  expirePendingBooking,
+  confirmCheckIn,
+} from "../services/checkInService.js";
 import { authorizeCharge, PaymentError } from "../services/paymentService.js";
 import {
   BOOKING_FEE,
@@ -19,6 +26,10 @@ import {
   notifyCheckOutSuccess,
   notifyBookingCancelled,
 } from "../services/notificationService.js";
+import { HttpError, sendError } from "../utils/httpError.js";
+import { logEvent } from "../utils/logger.js";
+import { emailVerificationRequired } from "../config/auth.js";
+import { addPoints, consumeFreeBookingCredit } from "../services/pointsService.js";
 
 const ACTIVE_STATUSES = ["pending", "confirmed"];
 
@@ -50,12 +61,22 @@ export const createBooking = async (req, res) => {
   let checkInDeadline;
 
   try {
-    const { spotId, zoneId, vehicleId, floor, paymentMethodId } = req.body;
+    const { spotId, zoneId, vehicleId, floor, paymentMethodId, useFreeBooking } = req.body;
+    let bookingFee = BOOKING_FEE;
     const userId = req.userId;
 
     await session.withTransaction(async () => {
-      const user = await User.findById(userId).session(session);
-      if (!user) throw new Error("ไม่พบข้อมูลผู้ใช้");
+      // Writing to the user's own document first makes this transaction
+      // conflict with any other booking attempt by the same user. Without it
+      // the "already has a booking" check below was a plain read: several
+      // requests fired at once each saw no booking, claimed different spots,
+      // and one account could hold every spot in the lot.
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { $set: { bookingLockAt: new Date() } },
+        { new: true, session }
+      );
+      if (!user) throw new HttpError(404, "ไม่พบข้อมูลผู้ใช้");
 
       const existingBooking = await Booking.findOne({
         user: userId,
@@ -63,7 +84,31 @@ export const createBooking = async (req, res) => {
       }).session(session);
 
       if (existingBooking) {
-        throw new Error("คุณมีการจองที่ใช้งานอยู่แล้ว กรุณาปิดการจองก่อนทำรายการใหม่");
+        throw new HttpError(409, "คุณมีการจองที่ใช้งานอยู่แล้ว กรุณาปิดการจองก่อนทำรายการใหม่", "active_booking_exists");
+      }
+
+      // Only enforced where mail can actually be delivered (config/auth.js).
+      if (emailVerificationRequired() && !user.isAccountVerified) {
+        throw new HttpError(403, "กรุณายืนยันอีเมลก่อนจองที่จอด", "email_unverified");
+      }
+
+      // ---- Which car -----------------------------------------------------
+      // Required now. A booking without a plate gave the staff scanning the
+      // QR nothing to compare against the car in the bay. With no explicit
+      // choice the user's default (or only) car is used.
+      vehicle = null;
+      if (vehicleId) {
+        vehicle = mongoose.isValidObjectId(vehicleId)
+          ? await Vehicle.findOne({ _id: vehicleId, userId }).session(session)
+          : null;
+        if (!vehicle) throw new HttpError(404, "ไม่พบข้อมูลรถยนต์");
+      } else {
+        vehicle =
+          (await Vehicle.findOne({ userId, isDefault: true }).session(session)) ||
+          (await Vehicle.findOne({ userId }).sort({ createdAt: 1 }).session(session));
+        if (!vehicle) {
+          throw new HttpError(400, "กรุณาเพิ่มรถยนต์ก่อนจอง เพื่อให้เจ้าหน้าที่ตรวจป้ายทะเบียนได้", "vehicle_required");
+        }
       }
 
       // ---- Assign a spot -----------------------------------------------
@@ -105,18 +150,21 @@ export const createBooking = async (req, res) => {
         throw error;
       }
 
-      vehicle = null;
-      if (vehicleId) {
-        vehicle = await Vehicle.findOne({ _id: vehicleId, userId }).session(session);
-        if (!vehicle) throw new Error("ไม่พบข้อมูลรถยนต์");
+      // ---- A "free booking" reward bought with points ------------------
+      // Spent inside the transaction, so a failed booking gives it back.
+      bookingFee = BOOKING_FEE;
+      if (useFreeBooking === true) {
+        await consumeFreeBookingCredit(userId, session);
+        bookingFee = 0;
       }
 
       // ---- Charge the non-refundable booking fee -----------------------
       // Inside the transaction: a declined card aborts everything and the spot
-      // returns to "available" instead of being silently held.
+      // returns to "available" instead of being silently held. A waived fee
+      // still needs a method on file: overtime is billed to it at check-out.
       charge = await authorizeCharge({
         userId,
-        amount: BOOKING_FEE,
+        amount: bookingFee,
         paymentMethodId,
         session,
         description: `SciPark booking fee - ${spot.spotNumber}`,
@@ -134,7 +182,8 @@ export const createBooking = async (req, res) => {
         floor: spot.floor,
         startTime: new Date(),
         status: "pending",
-        bookingFee: BOOKING_FEE,
+        bookingFee,
+        feeWaiver: bookingFee === 0 ? "free_booking_credit" : null,
         paymentStatus: "paid",
         paymentMethod: charge.method?._id || null,
         cost: 0,
@@ -176,12 +225,13 @@ export const createBooking = async (req, res) => {
       status: newBooking.status,
       payment: {
         status: "paid",
-        amount: BOOKING_FEE,
+        amount: bookingFee,
+        waived: bookingFee === 0,
         transactionId: charge.transactionId,
         method: charge.method?.getDisplayName?.() || null,
       },
       pricing: {
-        bookingFee: BOOKING_FEE,
+        bookingFee,
         freeHours: FREE_HOURS,
         overtimeRate: OVERTIME_RATE,
       },
@@ -201,19 +251,16 @@ export const createBooking = async (req, res) => {
       spotName: spot.spotNumber || spot.name,
     }).catch((e) => console.error("Notification error:", e.message));
 
+    logEvent("booking_created", { zone: spot.zone?.zoneName, feeWaived: bookingFee === 0 });
     res.status(201).json({ success: true, message: "สร้างการจองสำเร็จ", data: responseData });
   } catch (error) {
     // withTransaction has already aborted and rolled back by this point.
     if (error instanceof PaymentError) {
-      console.warn("Booking payment declined:", error.code);
+      logEvent("payment_declined", { stage: "booking", code: error.code });
       return res.status(402).json({ success: false, code: error.code, message: error.message });
     }
 
-    console.error("Create booking error:", error);
-    res.status(error.statusCode || 400).json({
-      success: false,
-      message: error.message || "ไม่สามารถสร้างการจองได้",
-    });
+    sendError(res, error, "ไม่สามารถสร้างการจองได้", "Create booking error");
   } finally {
     await session.endSession();
   }
@@ -235,7 +282,7 @@ export const getActiveBooking = async (req, res) => {
       .populate({
         path: "spot",
         select: "spotNumber name floor building pricePerHour facilities",
-        populate: { path: "zone", select: "zoneName name building" },
+        populate: { path: "zone", select: "zoneName name building latitude longitude checkInRadiusMeters" },
       })
       .populate("vehicle", "licensePlate brand model");
 
@@ -302,6 +349,14 @@ export const getActiveBooking = async (req, res) => {
         checkInDeadline: booking.checkInDeadline,
         graceMinutes: CHECKIN_GRACE_MINUTES,
         isCheckedIn: booking.isCheckedIn,
+        checkInMethod: booking.checkInMethod,
+        // How this booking can be checked in. A staff QR scan always works;
+        // GPS self check-in only where the lot has been given coordinates.
+        checkInOptions: {
+          staffScan: true,
+          gps: zoneHasLocation(booking.spot?.zone),
+          radiusMeters: booking.spot?.zone?.checkInRadiusMeters || 100,
+        },
         timeRemainingToCheckIn,
         duration: { hours: live.hours, minutes: live.minutes },
         pricing: {
@@ -320,7 +375,7 @@ export const getActiveBooking = async (req, res) => {
     });
   } catch (error) {
     console.error("Get active booking error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -369,24 +424,65 @@ export const getBookingQR = async (req, res) => {
   }
 };
 
+/** Answer for a booking whose check-in window has already closed. */
+export const expiredResponse = (res, booking) =>
+  res.status(400).json({
+    success: false,
+    code: "checkin_expired",
+    message: `หมดเวลา check-in แล้ว การจองถูกยกเลิกอัตโนมัติ (ค่าจอง ${booking.bookingFee} บาทไม่คืน)`,
+    bookingFee: booking.bookingFee,
+    refundable: false,
+  });
+
+/** Cancel a booking found past its deadline and tell its owner. */
+export const expireAndNotify = async (booking) => {
+  const cancelled = await expirePendingBooking(booking._id);
+  if (cancelled) {
+    notifyBookingCancelled(
+      cancelled.user,
+      { bookingId: cancelled._id, spotName: cancelled.spotNumber },
+      "หมดเวลา Check-in"
+    ).catch(() => {});
+  }
+};
+
+/** Read and range-check a coordinate pair sent by the browser. */
+const parseLocation = (body = {}) => {
+  const latitude = Number(body.latitude);
+  const longitude = Number(body.longitude);
+  const accuracy = Number(body.accuracy);
+  const valid =
+    Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
+    Number.isFinite(longitude) && Math.abs(longitude) <= 180 &&
+    Number.isFinite(accuracy) && accuracy >= 0;
+  return valid ? { latitude, longitude, accuracy } : null;
+};
+
 /*
-    @desc   Check in (verifies the QR credential)
+    @desc   Self check-in, proven by the phone's location
     @route  PUT /api/bookings/:bookingId/checkin
     @access Private
+
+    This used to accept the QR token as proof of arrival, but the API returned
+    that token to the user the moment they booked, so anyone could check in
+    from home. Arrival is now proven one of two ways:
+      - a staff member scans the QR (POST /api/staff/scan), or
+      - here: the phone reports a GPS fix inside the lot's radius. Only lots an
+        admin has given coordinates allow this.
 */
 export const checkIn = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const { qrPayload, token } = req.body || {};
 
     if (!mongoose.isValidObjectId(bookingId)) {
       return res.status(404).json({ success: false, message: "ไม่พบการจอง" });
     }
 
-    const booking = await Booking.findById(bookingId)
-      .select("+qrTokenHash")
-      .populate("spot", "spotNumber name floor building")
-      .populate("zone", "zoneName");
+    const booking = await Booking.findById(bookingId).populate({
+      path: "spot",
+      select: "spotNumber name floor building zone",
+      populate: { path: "zone", select: "zoneName latitude longitude checkInRadiusMeters" },
+    });
 
     if (!booking) {
       return res.status(404).json({ success: false, message: "ไม่พบการจอง" });
@@ -404,63 +500,77 @@ export const checkIn = async (req, res) => {
       });
     }
 
-    const now = new Date();
-
     // Deadline passed: cancel here instead of waiting for the sweeper, so the
     // user gets a truthful answer immediately.
-    if (now > booking.checkInDeadline) {
-      booking.status = "cancelled";
-      booking.cancelReason = "auto_cancelled_timeout";
-      booking.endTime = now;
-      booking.qrTokenHash = null;
-      await booking.save();
-      await ParkingSpot.findByIdAndUpdate(booking.spot._id, { status: "available" });
+    if (new Date() > booking.checkInDeadline) {
+      await expireAndNotify(booking);
+      return expiredResponse(res, booking);
+    }
 
-      notifyBookingCancelled(
-        booking.user,
-        { bookingId: booking._id, spotName: booking.spot?.spotNumber },
-        "หมดเวลา Check-in"
-      ).catch(() => {});
-
-      return res.status(400).json({
+    const zone = booking.spot?.zone;
+    if (!zoneHasLocation(zone)) {
+      return res.status(403).json({
         success: false,
-        code: "checkin_expired",
-        message: `หมดเวลา check-in แล้ว การจองถูกยกเลิกอัตโนมัติ (ค่าจอง ${booking.bookingFee} บาทไม่คืน)`,
-        bookingFee: booking.bookingFee,
-        refundable: false,
+        code: "self_checkin_unavailable",
+        message: "ลานนี้ยังไม่เปิดให้เช็คอินด้วยตำแหน่ง กรุณาให้เจ้าหน้าที่สแกน QR Code",
       });
     }
 
-    // Verify the scanned credential against the hash stored at booking time.
-    const scan = verifyScan(booking, booking.qrTokenHash, qrPayload ?? token);
-    if (!scan.valid) {
-      return res.status(400).json({ success: false, code: "invalid_qr", message: scan.reason });
+    const position = parseLocation(req.body);
+    if (!position) {
+      return res.status(400).json({
+        success: false,
+        code: "location_required",
+        message: "ต้องเปิดตำแหน่ง (GPS) เพื่อเช็คอินด้วยตนเอง",
+      });
     }
 
-    booking.status = "confirmed";
-    booking.isCheckedIn = true;
-    booking.actualStartTime = now;
-    booking.qrTokenHash = null; // one check-in per code
-    await booking.save();
+    if (position.accuracy > MAX_GPS_ACCURACY_METERS) {
+      return res.status(400).json({
+        success: false,
+        code: "gps_inaccurate",
+        message: `สัญญาณ GPS ไม่แม่นพอ (คลาดเคลื่อน ~${Math.round(position.accuracy)} ม.) ลองออกที่โล่งแล้วลองใหม่ หรือให้เจ้าหน้าที่สแกน QR`,
+        accuracy: Math.round(position.accuracy),
+      });
+    }
 
-    // The spot is now physically in use, not merely held.
-    await ParkingSpot.findByIdAndUpdate(booking.spot._id, { status: "occupied" });
+    const distance = distanceMeters(position, zone);
+    const radius = zone.checkInRadiusMeters || 100;
 
-    notifyCheckInSuccess(booking.user, {
+    if (distance > radius) {
+      return res.status(403).json({
+        success: false,
+        code: "too_far",
+        message: `คุณอยู่ห่างจากลาน ${zone.zoneName} ประมาณ ${Math.round(distance)} ม. ต้องอยู่ภายใน ${radius} ม. จึงจะเช็คอินได้`,
+        distanceMeters: Math.round(distance),
+        radiusMeters: radius,
+      });
+    }
+
+    const confirmed = await confirmCheckIn({
       bookingId: booking._id,
+      method: "gps",
+      location: { ...position, distanceMeters: Math.round(distance) },
+    });
+
+    notifyCheckInSuccess(confirmed.user, {
+      bookingId: confirmed._id,
       spotName: booking.spot?.spotNumber || booking.spot?.name || "N/A",
     }).catch(() => {});
 
+    logEvent("checkin", { method: "gps", distanceMeters: Math.round(distance) });
     res.status(200).json({
       success: true,
       message: "Check-in สำเร็จ ยินดีต้อนรับสู่ที่จอดรถ",
       data: {
-        bookingId: booking._id,
-        checkedInAt: booking.actualStartTime,
-        spot: booking.spot,
-        zone: booking.zone,
+        bookingId: confirmed._id,
+        checkedInAt: confirmed.actualStartTime,
+        method: "gps",
+        distanceMeters: Math.round(distance),
+        spot: { spotNumber: booking.spot?.spotNumber, name: booking.spot?.name },
+        zone: { zoneName: zone.zoneName },
         pricing: {
-          bookingFee: booking.bookingFee,
+          bookingFee: confirmed.bookingFee,
           freeHours: FREE_HOURS,
           overtimeRate: OVERTIME_RATE,
           note: `${FREE_HOURS} ชม.แรกฟรี หลังจากนั้น ${OVERTIME_RATE} บาท/ชม.`,
@@ -468,8 +578,7 @@ export const checkIn = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Check-in error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดในการ check-in" });
+    sendError(res, error, "เกิดข้อผิดพลาดในการ check-in", "Check-in error");
   }
 };
 
@@ -485,6 +594,7 @@ export const checkOut = async (req, res) => {
   let user;
   let bill;
   let overtimeCharge = null;
+  let newBalance = null;
 
   try {
     const bookingId = req.params.bookingId || req.params.id;
@@ -499,7 +609,7 @@ export const checkOut = async (req, res) => {
 
     await session.withTransaction(async () => {
       booking = await Booking.findById(bookingId).populate("spot").session(session);
-      if (!booking) throw new Error("ไม่พบการจอง");
+      if (!booking) throw new HttpError(404, "ไม่พบการจอง");
 
       if (booking.user.toString() !== userId) {
         const err = new Error("คุณไม่มีสิทธิ์เข้าถึงการจองนี้");
@@ -507,7 +617,7 @@ export const checkOut = async (req, res) => {
         throw err;
       }
       if (booking.status !== "confirmed") {
-        throw new Error(
+        throw new HttpError(400, 
           booking.status === "pending"
             ? "กรุณา check-in ก่อน check-out"
             : `การจองนี้อยู่ในสถานะ ${booking.status}`
@@ -532,7 +642,12 @@ export const checkOut = async (req, res) => {
         overtimeCharge = await authorizeCharge({
           userId,
           amount: bill.overtimeCost,
-          paymentMethodId: paymentMethodId || booking.paymentMethod,
+          // An explicit choice is honoured strictly. Otherwise prefer the card
+          // the booking was paid with — but if the user has since removed it,
+          // fall back to their default instead of trapping the car in the bay
+          // with "payment method not found".
+          paymentMethodId: paymentMethodId || null,
+          preferredMethodId: paymentMethodId ? null : booking.paymentMethod,
           session,
           description: `SciPark overtime - ${booking.spotNumber || booking.spot?.spotNumber}`,
         });
@@ -553,9 +668,21 @@ export const checkOut = async (req, res) => {
       // Points are awarded here. Previously check-out skipped them while the
       // legacy complete endpoint granted them, so the reward depended on which
       // button the user happened to press.
-      user.points = (user.points || 0) + bill.pointsEarned;
-      if (voucher) user.activeDiscount = null; // single use
+
+      // Single use — but only spent when it actually took money off. It used
+      // to be burned on any check-out, so a "50% off overtime" code vanished
+      // on a session inside the free hours, where it had saved nothing.
+      if (voucher && bill.voucherDiscount > 0) user.activeDiscount = null;
       await user.save({ session });
+
+      // Through the ledger (services/pointsService.js), not a bare counter.
+      newBalance = await addPoints({
+        userId,
+        amount: bill.pointsEarned,
+        reason: "session",
+        bookingId: booking._id,
+        session,
+      });
 
     });
 
@@ -570,6 +697,11 @@ export const checkOut = async (req, res) => {
       }
     ).catch(() => {});
 
+    logEvent("checkout", {
+      minutes: Math.round(bill.durationHours * 60),
+      overtimeCost: bill.overtimeCost,
+      totalCost: bill.totalCost,
+    });
     res.status(200).json({
       success: true,
       message: "Check-out สำเร็จ ขอบคุณที่ใช้บริการ",
@@ -594,13 +726,14 @@ export const checkOut = async (req, res) => {
           method: overtimeCharge?.method?.getDisplayName?.() || null,
         },
         pointsEarned: bill.pointsEarned,
-        totalPoints: user.points,
+        totalPoints: newBalance ?? user.points,
         checkedIn: booking.actualStartTime,
         checkedOut: booking.actualEndTime,
       },
     });
   } catch (error) {
     if (error instanceof PaymentError) {
+      logEvent("payment_declined", { stage: "checkout", code: error.code });
       return res.status(402).json({
         success: false,
         code: error.code,
@@ -609,11 +742,7 @@ export const checkOut = async (req, res) => {
       });
     }
 
-    console.error("Check-out error:", error);
-    res.status(error.statusCode || 400).json({
-      success: false,
-      message: error.message || "เกิดข้อผิดพลาดในการ check-out",
-    });
+    sendError(res, error, "เกิดข้อผิดพลาดในการ check-out", "Check-out error");
   } finally {
     await session.endSession();
   }
@@ -654,7 +783,7 @@ export const cancelBooking = async (req, res) => {
         .populate("spot")
         .session(session);
 
-      if (!booking) throw new Error("ไม่พบการจองที่สามารถยกเลิกได้");
+      if (!booking) throw new HttpError(404, "ไม่พบการจองที่สามารถยกเลิกได้");
 
       // A checked-in car is physically parked; it has to check out, not cancel.
       if (booking.status === "confirmed") {
@@ -682,6 +811,7 @@ export const cancelBooking = async (req, res) => {
       "คุณยกเลิกการจองเอง"
     ).catch(() => {});
 
+    logEvent("booking_cancelled", { reason: "user" });
     res.status(200).json({
       success: true,
       message: `ยกเลิกการจองสำเร็จ (ค่าธรรมเนียมการจอง ${booking.bookingFee} บาทไม่คืน)`,
@@ -693,11 +823,7 @@ export const cancelBooking = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Cancel booking error:", error);
-    res.status(error.statusCode || 400).json({
-      success: false,
-      message: error.message || "ไม่สามารถยกเลิกการจองได้",
-    });
+    sendError(res, error, "ไม่สามารถยกเลิกการจองได้", "Cancel booking error");
   } finally {
     await session.endSession();
   }
@@ -790,6 +916,6 @@ export const getBookingHistory = async (req, res) => {
     });
   } catch (error) {
     console.error("Get booking history error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };

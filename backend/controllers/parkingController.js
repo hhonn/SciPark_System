@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import ParkingZone from "../models/parkingZoneModel.js";
 import ParkingSpot from "../models/parkingSpotModel.js";
+import Booking from "../models/bookingModel.js";
 
 const shapeSpot = (spot) => ({
   id: spot._id,
@@ -73,7 +74,7 @@ export const getAllZones = async (req, res) => {
     });
   } catch (error) {
     console.error("Get all zones error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -125,7 +126,7 @@ export const getZoneById = async (req, res) => {
     });
   } catch (error) {
     console.error("Get zone by ID error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -150,7 +151,7 @@ export const getSpotsByZone = async (req, res) => {
     res.status(200).json({ success: true, count: spots.length, spots: spots.map(shapeSpot) });
   } catch (error) {
     console.error("Get spots by zone error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -189,7 +190,7 @@ export const getAllSpots = async (req, res) => {
     res.status(200).json({ success: true, count: formattedSpots.length, spots: formattedSpots });
   } catch (error) {
     console.error("Get all spots error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -233,7 +234,7 @@ export const getSpotById = async (req, res) => {
     });
   } catch (error) {
     console.error("Get spot by ID error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -261,6 +262,21 @@ export const updateSpotStatus = async (req, res) => {
       });
     }
 
+    // A spot held by a live booking must stay consistent with that booking.
+    // Flipping it to "available" by hand let the next driver be assigned a
+    // bay someone had already paid for (or was parked in).
+    const holder = await Booking.findOne({ spot: id, status: { $in: ["pending", "confirmed"] } })
+      .select("status spotNumber");
+    if (holder) {
+      return res.status(409).json({
+        success: false,
+        code: "spot_in_use",
+        message: holder.status === "confirmed"
+          ? "ช่องนี้มีรถเช็คอินอยู่ ต้องเช็คเอาต์หรือยกเลิกการจองก่อนเปลี่ยนสถานะ"
+          : "ช่องนี้ถูกจองอยู่ ต้องยกเลิกการจองก่อนเปลี่ยนสถานะ",
+      });
+    }
+
     const spot = await ParkingSpot.findByIdAndUpdate(
       id,
       { status },
@@ -278,7 +294,7 @@ export const updateSpotStatus = async (req, res) => {
     });
   } catch (error) {
     console.error("Update spot status error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -316,6 +332,6 @@ export const getParkingStats = async (req, res) => {
     });
   } catch (error) {
     console.error("Get parking stats error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };

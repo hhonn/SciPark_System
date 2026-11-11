@@ -3,6 +3,7 @@ import Vehicle from "../models/vehicleModel.js";
 import Booking from "../models/bookingModel.js";
 import User from "../models/userModel.js";
 import { getEffectiveTier } from "../config/pricing.js";
+import { mediaEnabled, photoUrl, deleteMedia } from "../services/mediaService.js";
 
 const ACTIVE_STATUSES = ["pending", "confirmed"];
 
@@ -102,7 +103,7 @@ export const addVehicle = async (req, res) => {
       return res.status(409).json({ success: false, message: "ป้ายทะเบียนนี้ถูกลงทะเบียนแล้ว" });
     }
     console.error("Add vehicle error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -128,7 +129,7 @@ export const getUserAllVehicles = async (req, res) => {
 
     // ค้นหารถทุกคันของผู้ใช้
     const vehicles = await Vehicle.find({ userId: user._id })
-      .select("licensePlate brand model color isDefault createdAt")
+      .select("licensePlate brand model color isDefault createdAt photoKey")
       .sort({ isDefault: -1, createdAt: -1 });
 
     const tier = getEffectiveTier(user);
@@ -139,20 +140,23 @@ export const getUserAllVehicles = async (req, res) => {
       // So the client can say "3 of 3 used" instead of discovering the cap
       // only when the next add is refused.
       limit: tier.maxVehicles,
-      data: vehicles.map(v => ({
+      // Whether this server can store photos (S3 configured).
+      photoUploads: mediaEnabled(),
+      data: await Promise.all(vehicles.map(async (v) => ({
         id: v._id,
         licensePlate: v.licensePlate,
         brand: v.brand,
         model: v.model,
         color: v.color || '',
         isDefault: v.isDefault || false,
-        createdAt: v.createdAt
-      }))
+        createdAt: v.createdAt,
+        photoUrl: await photoUrl(v.photoKey),
+      })))
     });
 
   } catch (error) {
     console.error("Get vehicles error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -226,7 +230,7 @@ export const updateVehicle = async (req, res) => {
       return res.status(409).json({ success: false, message: "ป้ายทะเบียนนี้ถูกลงทะเบียนแล้ว" });
     }
     console.error("Update vehicle error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -269,6 +273,7 @@ export const deleteVehicle = async (req, res) => {
 
     const wasDefault = vehicle.isDefault;
     await Vehicle.deleteOne({ _id: vehicle._id });
+    await deleteMedia(vehicle.photoKey);
 
     // If deleted vehicle was default, set another vehicle as default
     if (wasDefault) {
@@ -286,7 +291,7 @@ export const deleteVehicle = async (req, res) => {
 
   } catch (error) {
     console.error("Delete vehicle error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -334,6 +339,6 @@ export const setDefaultVehicle = async (req, res) => {
 
   } catch (error) {
     console.error("Set default vehicle error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };

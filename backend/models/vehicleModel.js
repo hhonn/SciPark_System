@@ -32,6 +32,11 @@ const vehicleSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // S3 object key of the car's photo (the bucket is private; see mediaService).
+    photoKey: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,

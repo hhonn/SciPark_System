@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { NAV_ITEMS } from './navItems'
+import { useNavItems } from './navItems'
 import { useBookingStore } from '../../stores/bookingStore'
 import { cn } from '../../utils/cn'
 
@@ -11,14 +11,21 @@ import { cn } from '../../utils/cn'
  */
 const TabBar = () => {
   const activeBooking = useBookingStore((s) => s.activeBooking)
+  // At most five fit a phone; the admin screen is reached from the scanner page.
+  const items = useNavItems().filter((item) => !item.adminOnly)
 
   return (
     <nav
       className="lg:hidden fixed bottom-0 inset-x-0 z-50 bg-surface/95 backdrop-blur-xl border-t border-hairline"
       aria-label="เมนูหลัก"
     >
-      <div className="grid grid-cols-4 px-2 pb-[env(safe-area-inset-bottom,0px)]">
-        {NAV_ITEMS.map(({ to, short, icon: Icon, end, badgeKey }) => (
+      <div
+        className={cn(
+          'grid px-2 pb-[env(safe-area-inset-bottom,0px)]',
+          items.length > 4 ? 'grid-cols-5' : 'grid-cols-4'
+        )}
+      >
+        {items.map(({ to, short, icon: Icon, end, badgeKey }) => (
           <NavLink
             key={to}
             to={to}

@@ -40,6 +40,17 @@ const userSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // Last time points were earned or spent; points lapse after a year without.
+    pointsActivityAt: {
+      type: Date,
+      default: null,
+    },
+    // "Free booking" rewards bought with points and not yet used.
+    freeBookingCredits: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     subscriptionExpiry: {
       type: Date,
       default: null,
@@ -64,6 +75,23 @@ const userSchema = new mongoose.Schema(
     isAdmin: {
       type: Boolean,
       default: false,
+    },
+    // Parking staff: may scan a driver's QR to check them in. Admins can too.
+    isStaff: {
+      type: Boolean,
+      default: false,
+    },
+    // Embedded in every JWT. Bumping it (password change) invalidates every
+    // token issued before, on every device.
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
+    // Written at the start of each booking transaction purely so that two
+    // concurrent bookings by the same user collide and are serialised.
+    bookingLockAt: {
+      type: Date,
+      default: null,
     },
   },
   {

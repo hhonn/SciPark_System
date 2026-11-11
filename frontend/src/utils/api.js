@@ -15,11 +15,8 @@ const api = axios.create({
   timeout: 20000,
 })
 
-api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
+// No Authorization header: the session is the httpOnly cookie, which
+// `withCredentials` sends. Script never touches the token.
 
 api.interceptors.response.use(
   (response) => response,

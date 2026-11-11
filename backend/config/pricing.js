@@ -26,7 +26,8 @@ export const TIERS = {
     price: 0,
     /** Fraction off the overtime fee (never off the booking fee). */
     discount: 0,
-    pointsPerHour: 2,
+    /** Multiplies the points a finished session earns (see POINTS). */
+    pointsMultiplier: 1,
     maxVehicles: 1,
     features: [
       "จองได้ทุกโซน",
@@ -41,7 +42,7 @@ export const TIERS = {
     name: "Diamond",
     price: 199,
     discount: 0.1,
-    pointsPerHour: 5,
+    pointsMultiplier: 1.5,
     maxVehicles: 3,
     features: [
       "ส่วนลด 10% ค่าจอดเกินเวลา",
@@ -49,7 +50,7 @@ export const TIERS = {
       "ประวัติการจอดไม่จำกัด",
       "แจ้งเตือนแบบ Real-time",
       "รองรับ 3 ยานพาหนะ",
-      "สะสม 5 แต้ม/ชั่วโมง",
+      "แต้มสะสม ×1.5",
     ],
   },
   predator: {
@@ -58,7 +59,7 @@ export const TIERS = {
     name: "Predator",
     price: 399,
     discount: 0.15,
-    pointsPerHour: 10,
+    pointsMultiplier: 2,
     maxVehicles: 10,
     features: [
       "ส่วนลด 15% ค่าจอดเกินเวลา",
@@ -66,13 +67,65 @@ export const TIERS = {
       "ประวัติการจอดไม่จำกัด",
       "แจ้งเตือนแบบ Real-time",
       "รองรับ 10 ยานพาหนะ",
-      "สะสม 10 แต้ม/ชั่วโมง",
+      "แต้มสะสม ×2",
       "บริการช่วยเหลือ 24/7",
     ],
   },
 };
 
 export const TIER_LIST = Object.values(TIERS);
+
+/**
+ * Loyalty points.
+ *
+ * Points used to be earned per hour parked — the longer a car sat in a bay,
+ * the more it earned. In a lot with too few bays that rewards exactly the
+ * wrong thing. They now reward showing up and leaving on time:
+ *  - a session that was checked in and checked out (and paid) earns a base,
+ *  - leaving within the free hours earns a bonus on top,
+ *  - a no-show earns nothing,
+ * multiplied by the member's tier.
+ */
+export const POINTS = {
+  completedSession: 10,
+  onTimeBonus: 5,
+  /** Points lapse after this long with no earning or spending at all. */
+  inactivityExpiryDays: 365,
+};
+
+/** What points can buy. Costs are in points. */
+export const REWARDS = {
+  free_booking: {
+    id: "free_booking",
+    name: "จองฟรี 1 ครั้ง",
+    description: `ไม่เสียค่าธรรมเนียมการจอง ${BOOKING_FEE} บาทในการจองครั้งถัดไปที่เลือกใช้สิทธิ์`,
+    cost: 150,
+  },
+  overtime_voucher: {
+    id: "overtime_voucher",
+    name: "คูปองลดค่าจอดเกินเวลา 50%",
+    description: "ใช้กับการเช็คเอาต์ครั้งถัดไปที่มีค่าจอดเกินเวลา ใช้ได้ 30 วัน",
+    cost: 80,
+    percent: 50,
+    validDays: 30,
+  },
+  diamond_trial: {
+    id: "diamond_trial",
+    name: "ทดลอง Diamond 7 วัน",
+    description: "ส่วนลด 10% ค่าจอดเกินเวลาและสิทธิ์ทั้งหมดของ Diamond (ต่อท้ายถ้าเป็น Diamond อยู่แล้ว)",
+    cost: 400,
+    tier: "diamond",
+    days: 7,
+  },
+};
+
+export const REWARD_LIST = Object.values(REWARDS);
+
+/** Points a finished, paid session earns. */
+export const pointsForSession = ({ durationHours, tier }) => {
+  const base = POINTS.completedSession + (durationHours <= FREE_HOURS ? POINTS.onTimeBonus : 0);
+  return Math.floor(base * (tier?.pointsMultiplier || 1));
+};
 
 /**
  * A tier as the API exposes it. Lives here rather than in a controller so the
@@ -84,7 +137,7 @@ export const publicTier = (tier) => ({
   name: tier.name,
   price: tier.price,
   discount: Math.round(tier.discount * 100),
-  pointsPerHour: tier.pointsPerHour,
+  pointsMultiplier: tier.pointsMultiplier,
   maxVehicles: tier.maxVehicles,
   features: tier.features,
 });
@@ -150,7 +203,7 @@ export const calculateSessionCost = ({ startedAt, endedAt, user, bookingFee = BO
   const voucherDiscount = (grossOvertime - tierDiscount) * voucherPercent;
 
   const overtimeCost = money(Math.max(0, grossOvertime - tierDiscount - voucherDiscount));
-  const pointsEarned = Math.floor(durationHours * tier.pointsPerHour);
+  const pointsEarned = pointsForSession({ durationHours, tier });
 
   return {
     durationMs,
@@ -182,6 +235,10 @@ export default {
   CHECKIN_GRACE_MINUTES,
   TIERS,
   TIER_LIST,
+  POINTS,
+  REWARDS,
+  REWARD_LIST,
+  pointsForSession,
   publicTier,
   publicPricing,
   getEffectiveTier,

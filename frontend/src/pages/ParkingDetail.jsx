@@ -9,6 +9,7 @@ import {
   AlertCircle,
   MapPin,
   Footprints,
+  MailCheck,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Button from '../components/ui/Button'
@@ -18,9 +19,10 @@ import Progress from '../components/ui/Progress'
 import EmptyState from '../components/ui/EmptyState'
 import { PageLoader } from '../components/ui/Loading'
 import LotPlan from '../components/LotPlan'
-import { parkingAPI, bookingAPI, vehicleAPI, paymentAPI } from '../utils/apiService'
+import { parkingAPI, bookingAPI, vehicleAPI, paymentAPI, pointsAPI } from '../utils/apiService'
 import { apiErrorMessage } from '../utils/api'
 import { useBookingStore } from '../stores/bookingStore'
+import { useAuthStore } from '../stores/authStore'
 import { usePricing } from '../stores/pricingStore'
 import { availabilityTone, formatTHB } from '../utils/format'
 import { cn } from '../utils/cn'
@@ -84,7 +86,7 @@ const toActiveBooking = (booking) => {
 const ParkingDetail = () => {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { setActiveBooking, setQrToken } = useBookingStore()
+  const setActiveBooking = useBookingStore((s) => s.setActiveBooking)
   const { bookingFee, freeHours, overtimeRate, graceMinutes } = usePricing()
 
   const [zone, setZone] = useState(null)
@@ -97,15 +99,31 @@ const ParkingDetail = () => {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [selectedVehicle, setSelectedVehicle] = useState('')
+  // "Free booking" rewards bought with points.
+  const [freeCredits, setFreeCredits] = useState(0)
+  const [useFree, setUseFree] = useState(false)
+  // The server decides whether verification is enforced (only when it can
+  // actually send mail) and reports it on the user.
+  const needsVerification = useAuthStore(
+    (s) => Boolean(s.user?.emailVerificationRequired && !s.user?.isAccountVerified)
+  )
   const [selectedPayment, setSelectedPayment] = useState('')
 
   const load = useCallback(async () => {
     try {
-      const [zoneRes, vehicleRes, paymentRes] = await Promise.allSettled([
+      const [zoneRes, vehicleRes, paymentRes, pointsRes] = await Promise.allSettled([
         parkingAPI.getZoneById(id),
         vehicleAPI.getAll(),
         paymentAPI.getAll(),
+        pointsAPI.get(),
       ])
+
+      if (pointsRes.status === 'fulfilled') {
+        const credits = pointsRes.value.data.freeBookingCredits || 0
+        setFreeCredits(credits)
+        // Offered by default when there is one to use.
+        setUseFree(credits > 0)
+      }
 
       if (zoneRes.status === 'rejected') throw zoneRes.reason
 
@@ -143,12 +161,11 @@ const ParkingDetail = () => {
         zoneId: id,
         vehicleId: selectedVehicle || undefined,
         paymentMethodId: selectedPayment || undefined,
+        useFreeBooking: useFree && freeCredits > 0 ? true : undefined,
       })
 
       const booking = data.data
       setActiveBooking(toActiveBooking(booking))
-      // Held in memory only: it is the credential the QR encodes.
-      setQrToken(booking.qrCode?.token || null)
 
       setConfirmOpen(false)
       toast.success(`จองสำเร็จ ช่อง ${booking.spot?.spotNumber}`)
@@ -168,6 +185,10 @@ const ParkingDetail = () => {
         setConfirmOpen(false)
         toast.error(message)
         load()
+      } else if (code === 'vehicle_required' || code === 'email_unverified') {
+        setConfirmOpen(false)
+        toast.error(message)
+        navigate('/app/profile')
       } else {
         toast.error(message)
       }
@@ -343,8 +364,14 @@ const ParkingDetail = () => {
             >
               ยกเลิก
             </Button>
-            <Button fullWidth onClick={handleConfirm} loading={submitting} data-autofocus>
-              ยืนยันและชำระ {bookingFee} บาท
+            <Button
+              fullWidth
+              onClick={handleConfirm}
+              loading={submitting}
+              disabled={vehicles.length === 0 || paymentMethods.length === 0 || needsVerification}
+              data-autofocus
+            >
+              {useFree && freeCredits > 0 ? 'ยืนยันการจอง (ใช้สิทธิ์จองฟรี)' : `ยืนยันและชำระ ${bookingFee} บาท`}
             </Button>
           </div>
         }
@@ -369,26 +396,62 @@ const ParkingDetail = () => {
             </div>
           </dl>
 
-          {/* Vehicle */}
-          {vehicles.length > 0 && (
-            <div>
-              <label htmlFor="vehicle" className="block mb-1.5 text-small font-medium text-content">
-                ยานพาหนะ
-              </label>
+          {/* Vehicle — required: the staff scan checks the plate against the car. */}
+          <div>
+            <label htmlFor="vehicle" className="block mb-1.5 text-small font-medium text-content">
+              ยานพาหนะ
+            </label>
+            {vehicles.length === 0 ? (
+              <div className="flex items-start gap-3 p-3 rounded-md bg-risk/8 border border-risk/25">
+                <Car className="w-5 h-5 text-risk shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-small text-content">ต้องเพิ่มรถก่อนจอง เพื่อให้เจ้าหน้าที่ตรวจป้ายทะเบียนได้</p>
+                  <Link to="/app/profile" className="text-small font-semibold text-brand-600 hover:underline">
+                    เพิ่มยานพาหนะ
+                  </Link>
+                </div>
+              </div>
+            ) : (
               <select
                 id="vehicle"
                 value={selectedVehicle}
                 onChange={(e) => setSelectedVehicle(e.target.value)}
                 className="w-full h-11 px-3 rounded-md bg-surface border-2 border-hairline text-content focus:border-brand-500 focus:outline-none"
               >
-                <option value="">ไม่ระบุ</option>
                 {vehicles.map((vehicle) => (
                   <option key={vehicle.id} value={vehicle.id}>
                     {vehicle.licensePlate} — {vehicle.brand} {vehicle.model}
                   </option>
                 ))}
               </select>
+            )}
+          </div>
+
+          {needsVerification && (
+            <div className="flex items-start gap-3 p-3 rounded-md bg-warn/8 border border-warn/25">
+              <MailCheck className="w-5 h-5 text-warn shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-small text-content">ต้องยืนยันอีเมลก่อนจองที่จอด</p>
+                <Link to="/app/profile" className="text-small font-semibold text-brand-600 hover:underline">
+                  ไปยืนยันอีเมล
+                </Link>
+              </div>
             </div>
+          )}
+
+          {freeCredits > 0 && (
+            <label className="flex items-start gap-3 p-3 rounded-md bg-ok/8 border border-ok/25 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 w-4 h-4 accent-current text-ok"
+                checked={useFree}
+                onChange={(e) => setUseFree(e.target.checked)}
+              />
+              <span className="text-small text-content">
+                ใช้สิทธิ์จองฟรีจากแต้ม (เหลือ {freeCredits} ครั้ง) ไม่เสียค่าธรรมเนียม {bookingFee} บาท
+                <span className="block text-micro text-content-muted">ถ้ายกเลิกหรือไม่มาเช็คอิน สิทธิ์จะถูกใช้ไปเหมือนค่าจองปกติ</span>
+              </span>
+            </label>
           )}
 
           {/* Payment */}

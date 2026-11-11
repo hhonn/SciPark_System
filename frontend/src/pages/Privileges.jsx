@@ -13,6 +13,7 @@ import { useAuthStore } from '../stores/authStore'
 import { usePricing } from '../stores/pricingStore'
 import { formatTHB, formatDateTime } from '../utils/format'
 import { cn } from '../utils/cn'
+import PointsPanel from '../components/PointsPanel'
 
 const TIER_ACCENT = {
   iron: 'border-hairline',
@@ -154,6 +155,9 @@ const Privileges = () => {
           </div>
         )}
       </section>
+
+      {/* A reward can change the tier or add a voucher: refresh the card above. */}
+      <PointsPanel onChange={load} />
 
       {/* Promo code */}
       <section className="bg-surface border border-hairline rounded-lg p-5">

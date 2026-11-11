@@ -4,6 +4,8 @@ import User from "../models/userModel.js";
 import Booking from "../models/bookingModel.js";
 import { getEffectiveTier } from "../config/pricing.js";
 import { MIN_PASSWORD_LENGTH } from "../config/auth.js";
+import { issueToken } from "../utils/authToken.js";
+import { verifyPassword } from "../utils/password.js";
 
 const ACTIVE_STATUSES = ["pending", "confirmed"];
 
@@ -15,9 +17,14 @@ const ACTIVE_STATUSES = ["pending", "confirmed"];
  * with percentages that matched neither the pricing config nor each other.
  * Both now come from what was actually billed and stored on the booking.
  */
-const summariseSpend = (bookings) => {
+const summariseSpend = (bookings, forfeited = []) => {
   let totalSpent = 0;
   let totalSavings = 0;
+
+  // A cancelled booking still cost its non-refundable fee. Only completed
+  // bookings were summed, so a user who lost three fees was told they had
+  // spent nothing.
+  for (const booking of forfeited) totalSpent += booking.bookingFee || 0;
 
   for (const booking of bookings) {
     const bookingFee = booking.bookingFee || 0;
@@ -49,15 +56,16 @@ export const getProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: "ไม่พบข้อมูลผู้ใช้" });
     }
 
-    const [totalBookings, completedList, activeBookings] = await Promise.all([
+    const [totalBookings, completedList, activeBookings, forfeited] = await Promise.all([
       Booking.countDocuments({ user: userId }),
       Booking.find({ user: userId, status: "completed" }).select(
         "bookingFee cost totalCost discountPercent"
       ),
       Booking.countDocuments({ user: userId, status: { $in: ACTIVE_STATUSES } }),
+      Booking.find({ user: userId, status: "cancelled", paymentStatus: "paid" }).select("bookingFee"),
     ]);
 
-    const { totalSpent, totalSavings } = summariseSpend(completedList);
+    const { totalSpent, totalSavings } = summariseSpend(completedList, forfeited);
     const tier = getEffectiveTier(user);
 
     res.status(200).json({
@@ -87,7 +95,7 @@ export const getProfile = async (req, res) => {
     });
   } catch (error) {
     console.error("Get profile error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -157,7 +165,7 @@ export const updateProfile = async (req, res) => {
     });
   } catch (error) {
     console.error("Update profile error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -170,7 +178,7 @@ export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword) {
+    if (typeof currentPassword !== "string" || typeof newPassword !== "string" || !currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
         message: "กรุณากรอกรหัสผ่านเดิมและรหัสผ่านใหม่",
@@ -197,18 +205,25 @@ export const changePassword = async (req, res) => {
       return res.status(404).json({ success: false, message: "ไม่พบข้อมูลผู้ใช้" });
     }
 
-    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    // verifyPassword also accepts passwords stored under the old escaping bug.
+    const { ok: isPasswordValid } = await verifyPassword(currentPassword, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({ success: false, message: "รหัสผ่านเดิมไม่ถูกต้อง" });
     }
 
     user.password = await bcrypt.hash(newPassword, 10);
+    // Every token issued under the old password stops working, on every
+    // device: whoever knew the old password may also be holding a session.
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
     await user.save();
 
-    res.status(200).json({ success: true, message: "เปลี่ยนรหัสผ่านสำเร็จ" });
+    // ...except this one, which gets a fresh token at the new version.
+    issueToken(res, user);
+
+    res.status(200).json({ success: true, message: "เปลี่ยนรหัสผ่านสำเร็จ ออกจากระบบอุปกรณ์อื่นทั้งหมดแล้ว" });
   } catch (error) {
     console.error("Change password error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -276,7 +291,7 @@ export const getBookingHistory = async (req, res) => {
     });
   } catch (error) {
     console.error("Get booking history error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };
 
@@ -298,7 +313,7 @@ export const getUserStats = async (req, res) => {
     // aggregation below matched nothing and "favourite zone" was always null.
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    const [totalBookings, activeBookings, completedList, bookingsByZone] = await Promise.all([
+    const [totalBookings, activeBookings, completedList, bookingsByZone, forfeited] = await Promise.all([
       Booking.countDocuments({ user: userId }),
       // "active" is not in the status enum; this counter was permanently zero.
       Booking.countDocuments({ user: userId, status: { $in: ACTIVE_STATUSES } }),
@@ -329,9 +344,10 @@ export const getUserStats = async (req, res) => {
         { $sort: { count: -1 } },
         { $limit: 1 },
       ]),
+      Booking.find({ user: userId, status: "cancelled", paymentStatus: "paid" }).select("bookingFee"),
     ]);
 
-    const { totalSpent, totalSavings } = summariseSpend(completedList);
+    const { totalSpent, totalSavings } = summariseSpend(completedList, forfeited);
     const tier = getEffectiveTier(user);
 
     res.status(200).json({
@@ -351,6 +367,6 @@ export const getUserStats = async (req, res) => {
     });
   } catch (error) {
     console.error("Get user stats error:", error);
-    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด", error: error.message });
+    res.status(500).json({ success: false, message: "เกิดข้อผิดพลาด" });
   }
 };

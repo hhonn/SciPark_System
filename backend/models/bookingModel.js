@@ -55,6 +55,12 @@ const bookingSchema = new mongoose.Schema({
     type: Number,
     default: BOOKING_FEE, // ค่าธรรมเนียมการจอง (ดู config/pricing.js)
   },
+  // Set when the booking fee was waived, e.g. paid for with a points reward.
+  feeWaiver: {
+    type: String,
+    enum: ["free_booking_credit", null],
+    default: null,
+  },
   cost: {
     type: Number,
     default: 0, // ค่าจอดเกินเวลาหลังหักส่วนลดแล้ว
@@ -111,6 +117,43 @@ const bookingSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  // How arrival was proven. Self check-in used to need nothing but a token the
+  // API had just handed the user, so a booking could be "checked in" from home.
+  checkInMethod: {
+    type: String,
+    enum: ["staff_scan", "gps", null],
+    default: null,
+  },
+  // The staff member whose scan checked this booking in.
+  checkedInBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
+  // Where the phone said it was, for a GPS check-in (kept for disputes).
+  checkInLocation: {
+    type: new mongoose.Schema(
+      {
+        latitude: Number,
+        longitude: Number,
+        accuracy: Number,
+        distanceMeters: Number,
+      },
+      { _id: false }
+    ),
+    default: null,
+  },
+  // Set when an admin cancels or force-checks-out a booking by hand.
+  closedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
+  adminNote: {
+    type: String,
+    default: "",
+    maxlength: 300,
+  },
   cancelReason: {
     type: String,
     enum: ["user_cancelled", "auto_cancelled_timeout", "admin_cancelled", null],
@@ -128,6 +171,8 @@ bookingSchema.index({ spot: 1 });
 bookingSchema.index({ startTime: -1 });
 // Drives the auto-cancel sweep.
 bookingSchema.index({ status: 1, checkInDeadline: 1 });
+// A staff scan finds the booking from the QR token's hash alone.
+bookingSchema.index({ qrTokenHash: 1 });
 
 /** Statuses that block a user from opening another booking. */
 bookingSchema.statics.ACTIVE_STATUSES = ["pending", "confirmed"];

@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Wallet,
+  LocateFixed,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Button from '../components/ui/Button'
@@ -25,15 +26,17 @@ import { useBookingStore } from '../stores/bookingStore'
 import { usePricing } from '../stores/pricingStore'
 import { formatCountdown, formatDuration, formatTHB, formatTime } from '../utils/format'
 import { cn } from '../utils/cn'
+import { getPosition, geolocationErrorMessage } from '../utils/geolocation'
 
 const POLL_INTERVAL = 20_000
+// While the QR is on screen a staff member may scan it at any moment.
+const SCAN_POLL_INTERVAL = 4_000
 const URGENT_MS = 5 * 60 * 1000
 
 const ActiveBooking = () => {
   const navigate = useNavigate()
   const reduce = useReducedMotion()
-  const { activeBooking, setActiveBooking, clearActiveBooking, qrToken, setQrToken } =
-    useBookingStore()
+  const { activeBooking, setActiveBooking, clearActiveBooking } = useBookingStore()
   const { bookingFee, freeHours } = usePricing()
 
   const [loading, setLoading] = useState(true)
@@ -61,13 +64,24 @@ const ActiveBooking = () => {
     load()
   }, [load])
 
-  // Keep the server's view authoritative while this screen is open.
+  // Keep the server's view authoritative while this screen is open, and check
+  // more often while the QR is up so a staff scan shows within seconds.
   useEffect(() => {
     const id = window.setInterval(() => {
       if (document.visibilityState === 'visible') load()
-    }, POLL_INTERVAL)
+    }, qrOpen ? SCAN_POLL_INTERVAL : POLL_INTERVAL)
     return () => window.clearInterval(id)
-  }, [load])
+  }, [load, qrOpen])
+
+  // A staff scan happens on someone else's phone; notice it here.
+  const wasPending = useRef(false)
+  useEffect(() => {
+    if (wasPending.current && activeBooking?.status === 'confirmed') {
+      setQrOpen(false)
+      toast.success('เช็คอินสำเร็จ เริ่มนับเวลาจอดแล้ว')
+    }
+    wasPending.current = activeBooking?.status === 'pending'
+  }, [activeBooking?.status])
 
   const deadline = activeBooking?.checkInDeadline
     ? new Date(activeBooking.checkInDeadline).getTime()
@@ -112,7 +126,6 @@ const ActiveBooking = () => {
       // always the only one that works.
       const { data } = await bookingAPI.getQRCode(activeBooking.bookingId)
       setQrImage(data.data.qrCodeURL)
-      setQrToken(data.data.token)
       setQrOpen(true)
     } catch (error) {
       toast.error(apiErrorMessage(error, 'สร้าง QR ไม่สำเร็จ'))
@@ -121,17 +134,27 @@ const ActiveBooking = () => {
     }
   }
 
-  const handleCheckIn = async () => {
-    if (!qrToken) {
-      toast.error('กรุณาเปิด QR Code ก่อนยืนยันการมาถึง')
+  /**
+   * Self check-in, proven by where the phone is. The server decides whether
+   * that is inside the lot; this only gathers the fix.
+   */
+  const handleGpsCheckIn = async () => {
+    let position
+    try {
+      position = await getPosition()
+    } catch (error) {
+      toast.error(geolocationErrorMessage(error))
       return
     }
 
     setBusy(true)
     try {
-      await bookingAPI.checkIn(activeBooking.bookingId, qrToken)
+      await bookingAPI.checkIn(activeBooking.bookingId, {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      })
       setQrOpen(false)
-      setQrToken(null)
       toast.success('เช็คอินสำเร็จ เริ่มนับเวลาจอดแล้ว')
       await load()
     } catch (error) {
@@ -319,7 +342,9 @@ const ActiveBooking = () => {
             >
               {remainingMs <= 0
                 ? 'หมดเวลาแล้ว ระบบกำลังยกเลิกการจอง'
-                : 'สแกน QR ที่ช่องจอดเพื่อยืนยันว่ามาถึงแล้ว'}
+                : activeBooking.checkInOptions?.gps
+                  ? 'ถึงลานแล้ว ให้เจ้าหน้าที่สแกน QR หรือเช็คอินด้วยตำแหน่ง'
+                  : 'ถึงลานแล้ว ให้เจ้าหน้าที่สแกน QR เพื่อเช็คอิน'}
             </p>
           </>
         ) : (
@@ -466,9 +491,11 @@ const ActiveBooking = () => {
         title="QR Code เช็คอิน"
         description={`ช่อง ${spot?.spotNumber} · ${zone?.name}`}
         footer={
-          <Button fullWidth size="lg" onClick={handleCheckIn} loading={busy} data-autofocus>
-            ยืนยันว่ามาถึงช่องจอดแล้ว
-          </Button>
+          activeBooking.checkInOptions?.gps ? (
+            <Button fullWidth size="lg" variant="soft" icon={LocateFixed} onClick={handleGpsCheckIn} loading={busy}>
+              เช็คอินด้วยตำแหน่ง (GPS)
+            </Button>
+          ) : null
         }
       >
         <div className="text-center">
@@ -483,8 +510,13 @@ const ActiveBooking = () => {
           )}
 
           <p className="mt-4 text-small text-content-muted">
-            สแกนที่เครื่องอ่านบริเวณช่องจอด หรือกดปุ่มด้านล่างเพื่อยืนยันด้วยตนเอง
+            แสดง QR นี้ให้เจ้าหน้าที่ที่ลานจอดสแกน หน้านี้จะอัปเดตเองเมื่อเช็คอินสำเร็จ
           </p>
+          {activeBooking.checkInOptions?.gps && (
+            <p className="mt-1 text-small text-content-muted">
+              หรือถ้าอยู่ในลานแล้ว (ภายใน {activeBooking.checkInOptions.radiusMeters} ม.) กดเช็คอินด้วยตำแหน่งได้
+            </p>
+          )}
 
           <p className="mt-2 inline-flex items-center gap-1.5 font-mono text-small font-semibold text-warn tabular">
             <Clock3 className="w-4 h-4" />

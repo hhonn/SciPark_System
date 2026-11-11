@@ -8,6 +8,9 @@ import fs from "fs"
 import { fileURLToPath } from 'url'
 
 import connectDB from "./config/db.js"
+import { jwtSecret } from "./utils/authToken.js"
+import { jsonAccessLog, logError } from "./utils/logger.js"
+import { warnAboutDefaultAccounts } from "./utils/seedAccounts.js"
 import { startAutoCancelScheduler, stopAutoCancelScheduler } from "./services/autoCancelService.js"
 import { startSubscriptionScheduler, stopSubscriptionScheduler } from "./services/subscriptionService.js"
 import { securityHeaders, sanitizeRequest, apiLimiter } from "./middleware/security.js"
@@ -21,6 +24,10 @@ import privilegesRouter from "./routes/privilegesRoute.js"
 import userRouter from "./routes/userRoutes.js"
 import paymentMethodRouter from "./routes/paymentMethodRoutes.js"
 import notificationRouter from "./routes/notificationRoutes.js"
+import staffRouter from "./routes/staffRoute.js"
+import adminRouter from "./routes/adminRoute.js"
+import pointsRouter from "./routes/pointsRoute.js"
+import { startPointsScheduler, stopPointsScheduler } from "./services/pointsService.js"
 
 // ES Module fix for __dirname
 const __filename = fileURLToPath(import.meta.url)
@@ -37,6 +44,15 @@ if (process.env.TRUST_PROXY) {
   app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
 }
 
+// Refuse to boot without a usable signing secret. Before, the server started
+// fine and then answered every login with a 500 and every request with 401.
+try {
+  jwtSecret();
+} catch (error) {
+  console.error(`❌ ${error.message}. Set JWT_SECRET in backend/.env (openssl rand -hex 32).`);
+  process.exit(1);
+}
+
 // Connect to Database
 connectDB();
 
@@ -44,6 +60,13 @@ connectDB();
 setTimeout(() => {
   startAutoCancelScheduler();
   startSubscriptionScheduler();
+  startPointsScheduler();
+
+  // The README publishes the seed logins (admin included). On a live server
+  // that is an open door, so say so loudly on every boot until it is closed.
+  if (process.env.NODE_ENV === "production") {
+    warnAboutDefaultAccounts().catch((e) => console.error("Seed account check failed:", e.message));
+  }
 }, 2000);
 
 // Security middleware
@@ -98,31 +121,41 @@ app.use(cors((req, callback) => {
     });
 }));
 
+// Health check: polled by the load balancer every few seconds and by the
+// zero-downtime demo script. Registered before the rate limiter (polling must
+// never be throttled) and the access log (it would drown everything else).
+// It is public, so it says only whether this instance can serve, plus which
+// release and instance answered — that is what lets a rolling deploy be seen
+// switching over without a single failed request.
+const health = async (req, res) => {
+  const mongoose = await import('mongoose');
+  const dbUp = mongoose.default.connection.readyState === 1;
+
+  res.set('Cache-Control', 'no-store');
+  res.status(dbUp ? 200 : 503).json({
+    status: dbUp ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    database: dbUp ? 'connected' : 'disconnected',
+    ...(process.env.RELEASE_ID && { release: process.env.RELEASE_ID }),
+    ...(process.env.INSTANCE_ID && { instance: process.env.INSTANCE_ID }),
+    ...(process.env.AVAILABILITY_ZONE && { zone: process.env.AVAILABILITY_ZONE }),
+  });
+};
+app.get('/health', health);
+app.get('/api/health', health); // reachable through the CDN's /api/* route
+
 // Rate limiting (per-route limiters live in the routers themselves)
 app.use('/api', apiLimiter);
 
-// Request logging
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+// Request logging: one JSON object per request in production (for CloudWatch
+// Logs Insights), the readable dev format locally.
+app.use(process.env.LOG_FORMAT === 'json' ? morgan(jsonAccessLog) : morgan('dev'));
 
 // API Root route
 app.get('/api', (req, res) => {
   res.json({
     message: "SciPark API is running",
     version: "2.0.0",
-  });
-});
-
-// Health check: used by uptime monitors and the deploy pipeline. It is public,
-// so it reports only whether the app and database are up — memory and uptime
-// figures used to be included, which told anyone how the box was sized.
-app.get('/health', async (req, res) => {
-  const mongoose = await import('mongoose');
-  const dbUp = mongoose.default.connection.readyState === 1;
-
-  res.status(dbUp ? 200 : 503).json({
-    status: dbUp ? 'ok' : 'degraded',
-    timestamp: new Date().toISOString(),
-    database: dbUp ? 'connected' : 'disconnected',
   });
 });
 
@@ -135,6 +168,9 @@ app.use('/api/privileges', privilegesRouter);
 app.use('/api/user', userRouter);
 app.use('/api/payment-methods', paymentMethodRouter);
 app.use('/api/notifications', notificationRouter);
+app.use('/api/staff', staffRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/points', pointsRouter);
 
 // Unknown API routes must 404 as JSON rather than fall through to the SPA.
 app.use('/api', (req, res) => {
@@ -180,7 +216,7 @@ if (frontendPath) {
 // Global error handler
 app.use((err, req, res, next) => {
     const statusCode = err.statusCode || err.status || 500;
-    if (statusCode >= 500) console.error('Unhandled error:', err);
+    if (statusCode >= 500) logError('Unhandled error', err, { path: req.path });
     // A 5xx message can carry driver/query internals (collection names, index
     // keys, connection strings), so production only says something went wrong.
     // 4xx messages are meant for the client and are passed through.
@@ -192,8 +228,12 @@ app.use((err, req, res, next) => {
     });
 });
 
-const server = app.listen(port, () => {
-    console.log(`🚀 SciPark server is running on port ${port}`)
+// HOST=127.0.0.1 when a reverse proxy on the same box (Caddy, Nginx) is the
+// only thing that should reach the app. Unset = all interfaces, which is what a
+// load balancer in front of the instance needs.
+const host = process.env.HOST || undefined;
+const server = app.listen(port, host, () => {
+    console.log(`🚀 SciPark server is running on ${host || '*'}:${port}`)
 });
 
 // Graceful shutdown — finish in-flight requests, then stop the cron jobs.
@@ -203,6 +243,7 @@ const shutdown = async (signal) => {
   // Was left running: the subscription cron kept the event loop alive, so the
   // process only ever exited via the 10s force-quit timer below.
   stopSubscriptionScheduler();
+  stopPointsScheduler();
   server.close(() => process.exit(0));
   // Don't hang forever if a socket refuses to close.
   setTimeout(() => process.exit(1), 10000).unref();

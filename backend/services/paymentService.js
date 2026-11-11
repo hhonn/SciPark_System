@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import PaymentMethod from "../models/paymentMethodModel.js";
 
 /**
@@ -22,12 +23,26 @@ export class PaymentError extends Error {
  *
  * @throws {PaymentError} when the user has nothing chargeable on file.
  */
-export const resolvePaymentMethod = async ({ userId, paymentMethodId, session = null }) => {
+export const resolvePaymentMethod = async ({ userId, paymentMethodId, preferredMethodId = null, session = null }) => {
+  // A malformed id used to throw a Mongoose CastError whose text described the
+  // schema; to the user it is simply a method that does not exist.
+  if (paymentMethodId && !mongoose.isValidObjectId(paymentMethodId)) {
+    throw new PaymentError("ไม่พบวิธีการชำระเงินที่เลือก", "no_payment_method");
+  }
+
+  let method = null;
+
+  // A soft preference (e.g. the card a booking was paid with): used if it is
+  // still active, otherwise silently replaced by the default below.
+  if (!paymentMethodId && preferredMethodId && mongoose.isValidObjectId(preferredMethodId)) {
+    method = await PaymentMethod.findOne({ _id: preferredMethodId, user: userId, status: "active" }).session(session);
+  }
+
   const query = paymentMethodId
     ? { _id: paymentMethodId, user: userId, status: "active" }
     : { user: userId, status: "active", isDefault: true };
 
-  let method = await PaymentMethod.findOne(query).session(session);
+  if (!method) method = await PaymentMethod.findOne(query).session(session);
 
   // No default flagged yet — fall back to any active method the user has.
   if (!method && !paymentMethodId) {
@@ -67,12 +82,12 @@ const isCardExpired = (method) => {
  * @returns {Promise<{ success: true, transactionId: string, amount: number, method: object }>}
  * @throws  {PaymentError} on a declined charge — callers must roll back.
  */
-export const authorizeCharge = async ({ userId, amount, paymentMethodId, session = null, description = "" }) => {
+export const authorizeCharge = async ({ userId, amount, paymentMethodId, preferredMethodId = null, session = null, description = "" }) => {
   if (!Number.isFinite(amount) || amount < 0) {
     throw new PaymentError("จำนวนเงินไม่ถูกต้อง", "invalid_amount");
   }
 
-  const method = await resolvePaymentMethod({ userId, paymentMethodId, session });
+  const method = await resolvePaymentMethod({ userId, paymentMethodId, preferredMethodId, session });
 
   if (isCardExpired(method)) {
     throw new PaymentError("บัตรของคุณหมดอายุแล้ว กรุณาใช้บัตรอื่น", "card_expired");

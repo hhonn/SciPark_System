@@ -30,6 +30,10 @@ const transporter = isMailConfigured
       // Dev/CI fallback so a missing SMTP config never breaks a user flow.
       sendMail: async (options) => {
         console.log(`✉️  [mail disabled] would send "${options.subject}" to ${options.to}`);
+        // Outside production, show the body too, so OTP and reset codes can
+        // be used while developing without an SMTP account. Never in
+        // production: a log full of reset codes is a log full of passwords.
+        if (process.env.NODE_ENV !== "production") console.log(`   ${String(options.text || "").replace(/\n/g, "\n   ")}`);
         return { messageId: "mail-disabled" };
       },
     };

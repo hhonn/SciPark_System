@@ -7,6 +7,7 @@ import {
   setDefaultVehicle 
 } from "../controllers/vehicleController.js";
 import userAuth from "../middleware/userAuth.js";
+import { requestPhotoUpload, confirmPhoto, removePhoto } from "../controllers/vehiclePhotoController.js";
 
 const router = express.Router();
 
@@ -24,6 +25,11 @@ router.put("/:id", updateVehicle);
 
 // Delete vehicle
 router.delete("/:id", deleteVehicle);
+
+// Car photo, stored in S3 (see services/mediaService.js)
+router.post("/:id/photo/upload", requestPhotoUpload);
+router.put("/:id/photo", confirmPhoto);
+router.delete("/:id/photo", removePhoto);
 
 // Set vehicle as default
 router.put("/:id/default", setDefaultVehicle);

@@ -16,6 +16,8 @@ import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
+import VerifyEmailCard from '../components/VerifyEmailCard'
+import VehiclePhoto from '../components/VehiclePhoto'
 import EmptyState from '../components/ui/EmptyState'
 import { PageLoader } from '../components/ui/Loading'
 import { userAPI, vehicleAPI } from '../utils/apiService'
@@ -53,6 +55,7 @@ const Profile = () => {
   const [profile, setProfile] = useState(null)
   const [stats, setStats] = useState(null)
   const [vehicles, setVehicles] = useState([])
+  const [photoUploads, setPhotoUploads] = useState(false)
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -84,7 +87,10 @@ const Profile = () => {
           phone: profileRes.value.data.user.phone || '',
         })
       }
-      if (vehicleRes.status === 'fulfilled') setVehicles(vehicleRes.value.data.data || [])
+      if (vehicleRes.status === 'fulfilled') {
+        setVehicles(vehicleRes.value.data.data || [])
+        setPhotoUploads(Boolean(vehicleRes.value.data.photoUploads))
+      }
       if (historyRes.status === 'fulfilled') setHistory(historyRes.value.data.bookings || [])
     } catch (error) {
       toast.error(apiErrorMessage(error))
@@ -239,6 +245,15 @@ const Profile = () => {
         )}
       </header>
 
+      {profile && !profile.isAccountVerified && (
+        <div id="verify-email">
+          <VerifyEmailCard
+            email={profile.email}
+            onVerified={() => setProfile((p) => ({ ...p, isAccountVerified: true }))}
+          />
+        </div>
+      )}
+
       {/* Tabs */}
       <div
         role="tablist"
@@ -319,9 +334,13 @@ const Profile = () => {
                 key={vehicle.id}
                 className="bg-surface border border-hairline rounded-lg p-4 flex items-center gap-4"
               >
-                <span className="w-11 h-11 rounded-md bg-surface-2 flex items-center justify-center shrink-0">
-                  <Car className="w-5 h-5 text-content-muted" />
-                </span>
+                <VehiclePhoto
+                  vehicle={vehicle}
+                  enabled={photoUploads}
+                  onUploaded={(photoUrl) =>
+                    setVehicles((prev) => prev.map((v) => (v.id === vehicle.id ? { ...v, photoUrl } : v)))
+                  }
+                />
 
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-h3 text-content">{vehicle.licensePlate}</p>

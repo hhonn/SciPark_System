@@ -1,0 +1,66 @@
+# Every push and pull request: test the backend, build the frontend, lint the
+# infrastructure. Nothing reaches AWS from here; see deploy.yml for that.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Same major version as production (infra/scipark.yaml installs 8.0).
+      MONGOMS_VERSION: "8.0.4"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Cache the in-memory MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-${{ env.MONGOMS_VERSION }}-${{ runner.os }}
+      - run: npm ci
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+      - name: Smoke tests (booking lifecycle, security, cloud-native pieces)
+        run: npm test
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm run build
+
+  infrastructure:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cfn-lint
+      - name: Lint CloudFormation templates
+        run: cfn-lint --regions ap-southeast-1 -- infra/scipark.yaml infra/github-oidc.yaml

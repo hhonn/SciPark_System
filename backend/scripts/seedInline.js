@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import ParkingZone from "../models/parkingZoneModel.js";
 import ParkingSpot from "../models/parkingSpotModel.js";
 import User from "../models/userModel.js";
+import Vehicle from "../models/vehicleModel.js";
 
 await mongoose.connect(process.env.MONGO_URI);
 
@@ -46,10 +47,15 @@ for (const zone of zones) {
 
 await ParkingSpot.insertMany(spots);
 
-await User.insertMany([
+const seededUsers = await User.insertMany([
   { name: "ทดสอบ ไอรอน", email: "iron@test.com", username: "ironuser", password: await bcrypt.hash("password123", 10), phone: "0812345678", rank: "Iron", points: 50, isAccountVerified: true },
   { name: "ทดสอบ ไดมอนด์", email: "diamond@test.com", username: "diamonduser", password: await bcrypt.hash("password123", 10), phone: "0823456789", rank: "Diamond", points: 500, isAccountVerified: true, subscriptionExpiry: new Date(Date.now() + 30 * 86400000) },
 ]);
+
+// Booking requires a car on file.
+await Vehicle.insertMany(
+  seededUsers.map((user, n) => ({ licensePlate: `ทดสอบ${1001 + n}`, brand: "Toyota", model: "Yaris", userId: user._id, isDefault: true }))
+);
 
 console.log(`🌱 Seeded ${zones.length} zones, ${spots.length} spots, 2 test users`);
 console.log("   login: iron@test.com / password123");

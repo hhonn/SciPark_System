@@ -1,8 +1,10 @@
 import cron from 'node-cron';
 import Booking from '../models/bookingModel.js';
-import ParkingSpot from '../models/parkingSpotModel.js';
+import { expirePendingBooking } from './checkInService.js';
 import { CHECKIN_GRACE_MINUTES } from '../config/pricing.js';
 import { notifyBookingCancelled, notifyCheckInReminder } from './notificationService.js';
+import { runExclusive } from '../utils/jobLock.js';
+import { logEvent } from '../utils/logger.js';
 
 /**
  * Auto-Cancel Reservation Service
@@ -91,19 +93,15 @@ export const autoCancelExpiredBookings = async () => {
 
   for (const booking of expiredBookings) {
     try {
-      booking.status = 'cancelled';
-      booking.endTime = now;
-      booking.cancelReason = 'auto_cancelled_timeout';
-      booking.refundable = false;
-      // Kill the QR credential with the booking.
-      booking.qrTokenHash = null;
-      await booking.save();
-
-      if (booking.spot?._id) {
-        await ParkingSpot.findByIdAndUpdate(booking.spot._id, { status: 'available' });
-      }
+      // Conditional on the booking still being pending. Saving the document
+      // loaded above overwrote whatever had happened since, so a driver
+      // checked in at the last second came back "cancelled" with their spot
+      // released to the next person.
+      const cancelled = await expirePendingBooking(booking._id, now);
+      if (!cancelled) continue;
 
       cancelledCount += 1;
+      logEvent('booking_cancelled', { reason: 'timeout' });
 
       console.log(
         `[AutoCancel] Cancelled booking ${booking._id} ` +
@@ -145,8 +143,11 @@ export const startAutoCancelScheduler = () => {
 
   task = cron.schedule(CHECK_INTERVAL, async () => {
     try {
-      await sendCheckInReminders();
-      await autoCancelExpiredBookings();
+      // One instance per minute, however many are running.
+      await runExclusive('auto-cancel', 55 * 1000, async () => {
+        await sendCheckInReminders();
+        await autoCancelExpiredBookings();
+      });
     } catch (error) {
       console.error('[AutoCancel] Scheduler error:', error);
     }
