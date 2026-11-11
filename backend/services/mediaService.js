@@ -36,7 +36,7 @@ export const mediaEnabled = () => Boolean(bucket());
 /** Origins the browser talks to for media, for the Content-Security-Policy. */
 export const mediaOrigins = () => {
   if (!mediaEnabled()) return [];
-  const region = process.env.AWS_REGION || "ap-southeast-1";
+  const region = process.env.AWS_REGION || "ap-southeast-2";
   return [`https://${bucket()}.s3.${region}.amazonaws.com`, `https://${bucket()}.s3.amazonaws.com`];
 };
 

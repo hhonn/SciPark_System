@@ -9,7 +9,7 @@
 set -euo pipefail
 
 STACK=${STACK:-scipark-prod}
-REGION=${AWS_REGION:-ap-southeast-1}
+REGION=${AWS_REGION:-ap-southeast-2}
 EMAIL=${1:?usage: deploy-stack.sh <alert-email>}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 

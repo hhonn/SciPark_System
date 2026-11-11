@@ -5,7 +5,7 @@
 set -euo pipefail
 
 STACK=${STACK:-scipark-prod}
-REGION=${AWS_REGION:-ap-southeast-1}
+REGION=${AWS_REGION:-ap-southeast-2}
 N=${1:-2}
 HERE=$(cd "$(dirname "$0")" && pwd)
 

@@ -93,7 +93,7 @@ EC2 instance ตัวใดก็ได้ใน 2 AZ → MongoDB ใน privat
   - ข้อมูลอยู่บน EBS แยก + snapshot รายวันเก็บ 7 วัน + snapshot สุดท้ายตอนลบ stack
   - ทางขยาย: เพิ่ม replica set เป็น 3 node ใน 3 AZ หรือย้ายไป DocumentDB
 
-## ค่าใช้จ่ายโดยประมาณ (ap-southeast-1, ต่อเดือน, เปิด 24 ชม.)
+## ค่าใช้จ่ายโดยประมาณ (ap-southeast-2, ต่อเดือน, เปิด 24 ชม.)
 
 ตัวเลขประมาณการ ควรยืนยันกับ [AWS Pricing Calculator](https://calculator.aws/) และหน้า Billing → Free Tier ของบัญชี
 
@@ -119,6 +119,7 @@ EC2 instance ตัวใดก็ได้ใน 2 AZ → MongoDB ใน privat
 - ช่วงพัฒนา: `scale.sh 1` และ `pause.sh` ทุกครั้งที่เลิกใช้ (กลางคืน/วันที่ไม่ได้ทำ)
 - ช่วงซ้อมและวันเดโม: `resume.sh 2`
 - ตั้ง `MonthlyBudgetUsd` ให้ต่ำกว่าเครดิตที่เหลือต่อเดือน และดูเครดิตคงเหลือที่ Billing → Credits ทุกสัปดาห์
+- Free plan ใช้ได้ **region เดียว** ที่บัญชีถูกกำหนดไว้ (บัญชีนี้คือ Sydney ap-southeast-2) สคริปต์ทั้งหมดจึงตั้งค่าเริ่มต้นเป็น Sydney — เปลี่ยนได้ด้วย `AWS_REGION=...`
 - Free plan อาจให้ใช้ได้เฉพาะ instance type ที่อยู่ใน Free Tier (t3.micro, t3.small, t4g.micro, …) ค่าเริ่มต้นของ template จึงใช้แต่ขนาดเหล่านี้
 
 **การคุมงบ:**
@@ -131,7 +132,7 @@ EC2 instance ตัวใดก็ได้ใน 2 AZ → MongoDB ใน privat
 
 ทำครั้งเดียว ใช้เวลาประมาณ 30 นาที (ส่วนใหญ่รอ CloudFront และ MongoDB)
 
-**1. สร้าง stack หลัก** (ใน CloudShell, region ap-southeast-1)
+**1. สร้าง stack หลัก** (ใน CloudShell, region ap-southeast-2)
 
 ```bash
 git clone https://github.com/hhonn/SciPark_System.git && cd SciPark_System
@@ -153,7 +154,7 @@ aws cloudformation describe-stacks --stack-name scipark-github --query "Stacks[0
 
 | Variable | ค่า |
 |---|---|
-| `AWS_REGION` | `ap-southeast-1` |
+| `AWS_REGION` | `ap-southeast-2` |
 | `AWS_DEPLOY_ROLE_ARN` | `DeployRoleArn` จากคำสั่งด้านบน |
 | `STACK_NAME` | `scipark-prod` |
 
