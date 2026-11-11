@@ -12,7 +12,10 @@ set -euo pipefail
 STACK=${STACK:-scipark-prod}
 REGION=${AWS_REGION:-ap-southeast-2}
 N=${1:?usage: scale.sh <instances>}
-MIN=$(( N > 0 ? 1 : 0 ))
+# N is the floor as well as the starting point. With a floor of 1, the CPU
+# target-tracking policy scaled an idle 2-instance fleet back to 1 within
+# minutes, leaving a single AZ. Above N it still scales out (up to AppMaxSize).
+MIN=$N
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 
 aws cloudformation deploy \

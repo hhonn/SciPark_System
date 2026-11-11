@@ -25,7 +25,8 @@ Parameters:
     Default: t3.micro
   AppMinSize:
     Type: Number
-    Default: 1
+    Default: 2
+    Description: Floor the CPU scaling policy never goes below. 2 keeps one instance per AZ.
   AppDesiredCapacity:
     Type: Number
     Default: 2
