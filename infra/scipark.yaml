@@ -54,6 +54,19 @@ Parameters:
   AlertEmail:
     Type: String
     Description: Receives CloudWatch alarms and budget warnings.
+  SesSenderEmail:
+    Type: String
+    Default: ""
+    Description: >-
+      Address SciPark mail is sent from through Amazon SES. Empty = AlertEmail. AWS emails it a
+      verification link; nothing is sent until it is clicked.
+  RequireEmailVerification:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Block booking until the user's email is verified. Keep false while SES is in the sandbox
+      (it can only deliver to verified addresses); set true after production access is granted.
   MonthlyBudgetUsd:
     Type: Number
     Default: 40
@@ -79,6 +92,7 @@ Parameters:
 
 Conditions:
   RestrictAlbToCloudFront: !Not [!Equals [!Ref CloudFrontPrefixListId, ""]]
+  SesSenderGiven: !Not [!Equals [!Ref SesSenderEmail, ""]]
 
 # =============================================================================
 # Resources
@@ -584,9 +598,22 @@ Resources:
               - Effect: Allow
                 Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
                 Resource: !Sub "${MediaBucket.Arn}/vehicles/*"
+              # Outgoing mail through SES. In the sandbox SES also checks the
+              # recipient's identity, hence identity/* (this account's only).
+              - Effect: Allow
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
   AppInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties: { Roles: [!Ref AppRole] }
+
+  # ------------------------------------------------------------------- Email --
+  # SES sends OTP / password-reset mail. Creating this identity makes AWS email
+  # the address a verification link; SES will not send from it until clicked.
+  SesSenderIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !If [SesSenderGiven, !Ref SesSenderEmail, !Ref AlertEmail]
 
   AppLogGroup:
     Type: AWS::Logs::LogGroup
@@ -647,6 +674,9 @@ Resources:
             TRUST_PROXY=2
             COOKIE_SECURE=true
             LOG_FORMAT=json
+            MAIL_TRANSPORT=ses
+            EMAIL_FROM="SciPark <${SesSenderIdentity}>"
+            REQUIRE_EMAIL_VERIFICATION=${RequireEmailVerification}
             INSTANCE_ID=$(MD instance-id)
             AVAILABILITY_ZONE=$(MD placement/availability-zone)
             RELEASE_ID=none

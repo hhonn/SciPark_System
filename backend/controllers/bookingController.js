@@ -286,8 +286,11 @@ export const getActiveBooking = async (req, res) => {
       })
       .populate("vehicle", "licensePlate brand model");
 
+    // Having no booking is the normal state, not an error. A 404 here showed
+    // up as a red "Failed to load resource" in every browser console on every
+    // screen that checks for one. (Older clients treat 404 the same as null.)
     if (!booking) {
-      return res.status(404).json({ success: false, message: "ไม่พบการจองที่ใช้งานอยู่" });
+      return res.status(200).json({ success: true, data: null, message: "ไม่มีการจองที่ใช้งานอยู่" });
     }
 
     const user = await User.findById(userId);

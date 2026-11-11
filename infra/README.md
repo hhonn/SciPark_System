@@ -68,6 +68,7 @@ EC2 instance ตัวใดก็ได้ใน 2 AZ → MongoDB ใน privat
 | Database | **MongoDB บน EC2** (private subnet) | ข้อมูลธุรกรรมทั้งหมด (การจอง, ผู้ใช้, แต้ม) | แอปเขียนด้วย MongoDB อยู่แล้ว ไม่ต้องแก้โค้ด, ค่าใช้จ่ายต่ำ — DocumentDB เป็น managed + Multi-AZ แต่ ~US$60+/เดือน; Atlas ฟรีแต่อยู่นอก VPC (ไม่อยู่ใน private subnet) |
 | Secrets | **Secrets Manager** | JWT secret, รหัสผ่าน DB (สร้างอัตโนมัติ) | สร้างรหัสผ่านให้ตอน deploy, ไม่มีรหัสในโค้ด/template/disk, IAM คุมว่าใครอ่านได้ — SSM Parameter Store ฟรีกว่าแต่ CloudFormation สร้าง SecureString ไม่ได้ |
 | Network | **VPC + NAT instance** | แยก public/private, ให้เครื่อง private ออกอินเทอร์เน็ตได้อย่างเดียว | NAT instance ~US$4/เดือน เทียบ NAT Gateway ~US$35+/เดือน (แลกกับเป็นเครื่องเดียวที่ต้องดูแลเอง, มี auto-recovery) |
+| Email | **Amazon SES** | ส่ง OTP ยืนยันอีเมลและรหัสตั้งรหัสผ่านใหม่ | ส่งผ่าน IAM role ของเครื่อง ไม่มีรหัสผ่านอีเมลเก็บไว้ที่ไหนเลย, ฟรี 3,000 ฉบับ/เดือน — SMTP ภายนอก (Brevo/Gmail) ต้องเก็บรหัส SMTP และอยู่นอก AWS; ข้อจำกัดของ SES: บัญชีใหม่อยู่ใน sandbox ส่งได้เฉพาะอีเมลที่ยืนยันแล้ว |
 | Observability | **CloudWatch** | log ทุก request เป็น JSON, metric ธุรกิจจาก log, dashboard, alarm → email | ใช้บริการเดียวครบ ไม่ต้องตั้ง Prometheus/Grafana เอง, อยู่ใน Free Tier |
 | CI/CD | **GitHub Actions** | test → release → rolling deploy อัตโนมัติ | ใช้ OIDC (token ชั่วคราว 1 ชม. ไม่มี key) ถ้าบัญชีอนุญาต; บัญชีนี้ SCP ห้ามสร้าง OIDC provider จึงใช้ IAM user ที่มีสิทธิ์แค่ deploy — CodePipeline ทำได้เหมือนกันแต่ตั้งค่าเยอะกว่า |
 
@@ -186,8 +187,13 @@ sudo SEED_USER_PASSWORD='<รหัสยาว>' SEED_ADMIN_PASSWORD='<รห�
 
 หรือย้ายข้อมูลจากเครื่องเดิม — ดูหัวข้อถัดไป
 
-**6. ใส่ค่าอีเมล (ถ้ามี SMTP):** Secrets Manager → `/scipark/prod/app` → แก้ JSON เพิ่ม `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM`
-และ `"REQUIRE_EMAIL_VERIFICATION": "true"` แล้ว restart ด้วย `./infra/scripts/scale.sh` หรือ Instance Refresh
+**6. อีเมล (Amazon SES):** stack สร้าง SES identity ของผู้ส่งให้ (`SesSenderEmail` หรือ `AlertEmail` ถ้าไม่ระบุ)
+- กดลิงก์ยืนยันในอีเมล "Amazon Web Services – Email Address Verification Request" ที่ส่งไปยังอีเมลผู้ส่ง
+- ช่วง **sandbox** SES ส่งได้เฉพาะอีเมลที่ยืนยันแล้ว: `./infra/scripts/ses-verify.sh add <อีเมลทีม/กรรมการ>` แล้วแต่ละคนกดลิงก์ยืนยัน
+- ดูสถานะ: `./infra/scripts/ses-verify.sh status`
+- ถ้าต้องการส่งหาใครก็ได้: SES console → Account dashboard → **Request production access**
+  ได้รับอนุมัติแล้วตั้ง `RequireEmailVerification=true` เพื่อบังคับยืนยันอีเมลก่อนจอง:
+  `aws cloudformation deploy --region ap-southeast-2 --stack-name scipark-prod --template-file infra/scipark.yaml --capabilities CAPABILITY_IAM --parameter-overrides RequireEmailVerification=true`
 
 ## ย้ายข้อมูลจาก EC2 เดิม (scipark-kmitl.duckdns.org)
 

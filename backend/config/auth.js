@@ -21,6 +21,7 @@ export const emailVerificationRequired = () => {
   const flag = process.env.REQUIRE_EMAIL_VERIFICATION;
   if (flag === "true") return true;
   if (flag === "false") return false;
+  if (process.env.MAIL_TRANSPORT === "ses") return true;
   return Boolean(
     (process.env.EMAIL_USER || process.env.SMTP_USER) &&
     (process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || process.env.SMTP_PASS)

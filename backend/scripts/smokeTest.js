@@ -965,6 +965,30 @@ const run = async () => {
   const bookGps = (userId, body = {}) =>
     call(bookingCtrl.createBooking, { body: { zoneId: gpsZone._id.toString(), ...body }, userId });
 
+  await check('email verification is required by default when mail goes through SES', async () => {
+    const { emailVerificationRequired } = await import('../config/auth.js');
+    const saved = { MAIL_TRANSPORT: process.env.MAIL_TRANSPORT, REQUIRE_EMAIL_VERIFICATION: process.env.REQUIRE_EMAIL_VERIFICATION };
+    try {
+      delete process.env.REQUIRE_EMAIL_VERIFICATION;
+      process.env.MAIL_TRANSPORT = 'ses';
+      assert.equal(emailVerificationRequired(), true);
+      // ...but an explicit "false" wins (SES sandbox: most people cannot receive mail yet).
+      process.env.REQUIRE_EMAIL_VERIFICATION = 'false';
+      assert.equal(emailVerificationRequired(), false);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+    }
+  });
+
+  await check('no active booking is a normal 200 with data null, not a 404', async () => {
+    const id = await bareDriver('idle@test.com', 'idledriver');
+    const res = await call(bookingCtrl.getActiveBooking, { userId: id });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data, null);
+  });
+
   await check('booking without a registered car is refused', async () => {
     const id = await bareDriver('nocar@test.com', 'nocar');
     const res = await bookGps(id);
