@@ -18,7 +18,7 @@ CloudFront + S3 (หน้าเว็บ) → ALB → EC2 Auto Scaling 2 AZ (AP
 | ไฟล์ | คืออะไร |
 |---|---|
 | [`infra/scipark.yaml`](infra/scipark.yaml) | CloudFormation: ทั้งระบบในไฟล์เดียว |
-| [`infra/github-oidc.yaml`](infra/github-oidc.yaml) | สิทธิ์ให้ GitHub Actions deploy โดยไม่มี access key |
+| [`infra/github-deploy.yaml`](infra/github-deploy.yaml) | สิทธิ์ให้ GitHub Actions deploy (OIDC หรือ IAM user ที่ทำได้แค่ deploy) |
 | [`.github/workflows/`](.github/workflows) | `ci.yml` ทดสอบทุก push · `deploy.yml` deploy เมื่อ push เข้า main |
 | [`infra/scripts/`](infra/scripts) | สร้าง stack, scale, pause/resume, เดโม zero-downtime |
 

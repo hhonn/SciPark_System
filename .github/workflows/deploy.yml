@@ -1,10 +1,11 @@
 # Push to main -> test -> publish the backend release -> rolling replacement of
 # the app instances with no downtime -> publish the frontend -> verify.
 #
-# One-time setup (see infra/README.md):
-#   repository variables  AWS_REGION, AWS_DEPLOY_ROLE_ARN, STACK_NAME
-# There are no AWS keys in GitHub: the job assumes AWS_DEPLOY_ROLE_ARN through
-# OpenID Connect and gets credentials that last one hour.
+# One-time setup (see infra/README.md), from infra/github-deploy.yaml:
+#   repository variables  AWS_REGION, STACK_NAME, and either
+#     AWS_DEPLOY_ROLE_ARN                        (OIDC: no stored keys, preferred)
+#   or repository secrets
+#     AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY  (accounts that block OIDC)
 name: Deploy
 
 on:
@@ -28,7 +29,7 @@ jobs:
 
   deploy:
     needs: test
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+    if: ${{ vars.STACK_NAME != '' }}
     runs-on: ubuntu-24.04
     environment: production
     env:
@@ -41,9 +42,18 @@ jobs:
         with:
           node-version: 22
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: AWS credentials (OIDC role, 1-hour token)
+        if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: AWS credentials (deploy-only IAM user)
+        if: ${{ vars.AWS_DEPLOY_ROLE_ARN == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Read the stack's outputs

@@ -63,4 +63,4 @@ jobs:
           python-version: "3.12"
       - run: pip install cfn-lint
       - name: Lint CloudFormation templates
-        run: cfn-lint --regions ap-southeast-2 -- infra/scipark.yaml infra/github-oidc.yaml
+        run: cfn-lint --regions ap-southeast-2 -- infra/scipark.yaml infra/github-deploy.yaml

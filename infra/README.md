@@ -48,7 +48,7 @@ flowchart LR
   asg -- "boot: release" --> art
   asg -- "outbound" --> nat
   asg -- "JSON logs" --> cw
-  gh -- "OIDC: release + instance refresh" --> art
+  gh -- "deploy-only credentials: release + instance refresh" --> art
   gh -- "frontend build" --> site
 ```
 
@@ -69,7 +69,7 @@ EC2 instance ตัวใดก็ได้ใน 2 AZ → MongoDB ใน privat
 | Secrets | **Secrets Manager** | JWT secret, รหัสผ่าน DB (สร้างอัตโนมัติ) | สร้างรหัสผ่านให้ตอน deploy, ไม่มีรหัสในโค้ด/template/disk, IAM คุมว่าใครอ่านได้ — SSM Parameter Store ฟรีกว่าแต่ CloudFormation สร้าง SecureString ไม่ได้ |
 | Network | **VPC + NAT instance** | แยก public/private, ให้เครื่อง private ออกอินเทอร์เน็ตได้อย่างเดียว | NAT instance ~US$4/เดือน เทียบ NAT Gateway ~US$35+/เดือน (แลกกับเป็นเครื่องเดียวที่ต้องดูแลเอง, มี auto-recovery) |
 | Observability | **CloudWatch** | log ทุก request เป็น JSON, metric ธุรกิจจาก log, dashboard, alarm → email | ใช้บริการเดียวครบ ไม่ต้องตั้ง Prometheus/Grafana เอง, อยู่ใน Free Tier |
-| CI/CD | **GitHub Actions + OIDC** | test → release → rolling deploy อัตโนมัติ | ไม่มี AWS access key เก็บใน GitHub (ใช้ token ชั่วคราว 1 ชม.) — CodePipeline ทำได้เหมือนกันแต่ตั้งค่าเยอะกว่า |
+| CI/CD | **GitHub Actions** | test → release → rolling deploy อัตโนมัติ | ใช้ OIDC (token ชั่วคราว 1 ชม. ไม่มี key) ถ้าบัญชีอนุญาต; บัญชีนี้ SCP ห้ามสร้าง OIDC provider จึงใช้ IAM user ที่มีสิทธิ์แค่ deploy — CodePipeline ทำได้เหมือนกันแต่ตั้งค่าเยอะกว่า |
 
 ## ความปลอดภัย
 
@@ -80,7 +80,9 @@ EC2 instance ตัวใดก็ได้ใน 2 AZ → MongoDB ใน privat
   - Role ของแอปอ่านได้เฉพาะ secret ของแอป ไม่ใช่ของ admin DB, เขียน S3 ได้เฉพาะ `vehicles/*`
 - **ข้อมูล:** EBS เข้ารหัส, S3 บล็อก public ทั้งหมด + เข้ารหัส, รูปรถดูได้ผ่าน presigned URL ที่หมดอายุใน 15 นาที
 - **HTTP:** HTTPS บังคับที่ CloudFront, HSTS, CSP, cookie `Secure`+`HttpOnly`, IMDSv2 บังคับบนทุกเครื่อง
-- **CI/CD:** GitHub ได้สิทธิ์ผ่าน OIDC เฉพาะ branch `main` ของ repo นี้ และทำได้แค่ publish release + instance refresh
+- **CI/CD:** GitHub ได้สิทธิ์แค่ publish release + instance refresh + invalidate CDN (อ่าน secret, แก้ IAM, เข้า DB ไม่ได้)
+  - แบบ OIDC: เฉพาะ branch `main` ของ repo นี้, token อายุ 1 ชม.
+  - แบบ access key (เมื่อ SCP ห้าม OIDC เช่นบัญชีนี้): key เก็บเป็น GitHub encrypted secret, ส่งมอบผ่าน Secrets Manager ไม่ผ่าน output, ควร rotate เป็นระยะ
 
 ## ความพร้อมใช้งานและการขยายตัว
 
@@ -142,23 +144,32 @@ git clone https://github.com/hhonn/SciPark_System.git && cd SciPark_System
 กดยืนยันอีเมล "AWS Notification - Subscription Confirmation" เพื่อรับ alarm
 ครั้งแรก app จะเริ่มที่ 0 เครื่อง เพราะยังไม่มี release ให้รัน
 
-**2. ให้ GitHub deploy ได้**
+**2. ให้ GitHub deploy ได้** — ใช้ [`github-deploy.yaml`](github-deploy.yaml) แบบใดแบบหนึ่ง
+
+*แบบ OIDC (ดีที่สุด ไม่มี key เก็บไว้):*
 
 ```bash
-aws cloudformation deploy --stack-name scipark-github --template-file infra/github-oidc.yaml \
-  --capabilities CAPABILITY_NAMED_IAM --parameter-overrides GitHubRepo=hhonn/SciPark_System
-aws cloudformation describe-stacks --stack-name scipark-github --query "Stacks[0].Outputs" --output table
+aws cloudformation deploy --region ap-southeast-2 --stack-name scipark-github \
+  --template-file infra/github-deploy.yaml --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides AuthMode=oidc GitHubRepo=hhonn/SciPark_System
 ```
 
-ใน GitHub → Settings → Secrets and variables → Actions → **Variables** ใส่:
+GitHub → Settings → Secrets and variables → Actions → **Variables**: `AWS_REGION`=`ap-southeast-2`,
+`STACK_NAME`=`scipark-prod`, `AWS_DEPLOY_ROLE_ARN`=output `DeployRoleArn`
 
-| Variable | ค่า |
-|---|---|
-| `AWS_REGION` | `ap-southeast-2` |
-| `AWS_DEPLOY_ROLE_ARN` | `DeployRoleArn` จากคำสั่งด้านบน |
-| `STACK_NAME` | `scipark-prod` |
+*แบบ access key (บัญชี Free plan: SCP ห้าม `iam:CreateOpenIDConnectProvider`):*
 
-(ถ้าบัญชีนี้มี GitHub OIDC provider อยู่แล้ว เพิ่ม `CreateOidcProvider=false`)
+```bash
+aws cloudformation deploy --region ap-southeast-2 --stack-name scipark-github \
+  --template-file infra/github-deploy.yaml --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides AuthMode=accesskey
+aws secretsmanager get-secret-value --region ap-southeast-2 \
+  --secret-id /scipark-prod/github-deploy-key --query SecretString --output text
+```
+
+GitHub → **Variables**: `AWS_REGION`=`ap-southeast-2`, `STACK_NAME`=`scipark-prod` (ไม่ต้องมี `AWS_DEPLOY_ROLE_ARN`)
+GitHub → **Secrets**: `AWS_ACCESS_KEY_ID` และ `AWS_SECRET_ACCESS_KEY` จากคำสั่งสุดท้าย
+แล้วลบ secret ใน AWS ทิ้งได้: `aws secretsmanager delete-secret --region ap-southeast-2 --secret-id /scipark-prod/github-deploy-key --force-delete-without-recovery`
 
 **3. Deploy ครั้งแรก:** GitHub → Actions → Deploy → Run workflow (หรือ push เข้า `main`)
 

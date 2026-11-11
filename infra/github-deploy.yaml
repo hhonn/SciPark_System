@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Credentials for GitHub Actions to deploy SciPark, with the same narrow
+  permissions either way:
+    AuthMode=oidc       GitHub proves which repo/branch is running and gets
+                        1-hour credentials for a role. No stored keys. Preferred.
+    AuthMode=accesskey  An IAM user whose access key is stored as GitHub
+                        secrets. For accounts whose organisation policy (SCP)
+                        forbids creating OIDC providers, e.g. AWS Free plan.
+
+Parameters:
+  AuthMode:
+    Type: String
+    Default: oidc
+    AllowedValues: [oidc, accesskey]
+  GitHubRepo:
+    Type: String
+    Default: hhonn/SciPark_System
+    Description: owner/repository (oidc mode)
+  Branch:
+    Type: String
+    Default: main
+    Description: Only this branch may deploy (oidc mode)
+  AppStackName:
+    Type: String
+    Default: scipark-prod
+    Description: Name of the stack created from scipark.yaml.
+  CreateOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: oidc mode - false if the account already has the GitHub OIDC provider.
+
+Conditions:
+  UseOidc: !Equals [!Ref AuthMode, oidc]
+  UseAccessKey: !Equals [!Ref AuthMode, accesskey]
+  MakeProvider: !And [!Condition UseOidc, !Equals [!Ref CreateOidcProvider, "true"]]
+
+Resources:
+  # ------------------------------------------------------------- oidc mode --
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Condition: UseOidc
+    Properties:
+      RoleName: !Sub "${AppStackName}-github-deploy"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              # Only pushes to this branch of this repository - not forks, not PRs.
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:ref:refs/heads/${Branch}"
+
+  # -------------------------------------------------------- accesskey mode --
+  DeployUser:
+    Type: AWS::IAM::User
+    Condition: UseAccessKey
+    Properties:
+      UserName: !Sub "${AppStackName}-github-deploy"
+  DeployUserKey:
+    Type: AWS::IAM::AccessKey
+    Condition: UseAccessKey
+    Properties:
+      UserName: !Ref DeployUser
+  # The key is handed over through Secrets Manager, never as a stack output
+  # (outputs are visible to anyone who can read the stack).
+  DeployUserKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: UseAccessKey
+    Properties:
+      Name: !Sub "/${AppStackName}/github-deploy-key"
+      Description: Copy into GitHub secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, then this can be deleted.
+      SecretString: !Sub '{"AWS_ACCESS_KEY_ID":"${DeployUserKey}","AWS_SECRET_ACCESS_KEY":"${DeployUserKey.SecretAccessKey}"}'
+
+  # ------------------------------------------------- permissions (shared) --
+  # One copy of the permissions per mode (cfn-lint cannot validate a single
+  # policy whose Roles/Users are chosen by a condition).
+  DeployRolePolicy:
+    Type: AWS::IAM::Policy
+    Condition: UseOidc
+    Properties:
+      PolicyName: deploy-scipark
+      Roles: [!Ref DeployRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadStackOutputs
+            Effect: Allow
+            Action: cloudformation:DescribeStacks
+            Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AppStackName}/*"
+          # CloudFormation names the site and artifacts buckets
+          # "<stack-name>-<logical-id>-<random>", so this prefix covers exactly
+          # that stack's buckets (the media bucket is not included).
+          - Sid: PublishReleaseAndSite
+            Effect: Allow
+            Action: [s3:PutObject, s3:GetObject, s3:ListBucket, s3:DeleteObject]
+            Resource:
+              - !Sub "arn:aws:s3:::${AppStackName}-*"
+              - !Sub "arn:aws:s3:::${AppStackName}-*/*"
+          - Sid: SelectRelease
+            Effect: Allow
+            Action: [ssm:PutParameter, ssm:GetParameter]
+            Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*/release"
+          - Sid: RollingDeploy
+            Effect: Allow
+            Action:
+              - autoscaling:StartInstanceRefresh
+              - autoscaling:DescribeInstanceRefreshes
+              - autoscaling:DescribeAutoScalingGroups
+              - autoscaling:CancelInstanceRefresh
+            Resource: "*"
+          - Sid: RefreshCdn
+            Effect: Allow
+            Action: [cloudfront:CreateInvalidation, cloudfront:GetInvalidation]
+            Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/*"
+
+  DeployUserPolicy:
+    Type: AWS::IAM::Policy
+    Condition: UseAccessKey
+    Properties:
+      PolicyName: deploy-scipark
+      Users: [!Ref DeployUser]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadStackOutputs
+            Effect: Allow
+            Action: cloudformation:DescribeStacks
+            Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AppStackName}/*"
+          # CloudFormation names the site and artifacts buckets
+          # "<stack-name>-<logical-id>-<random>", so this prefix covers exactly
+          # that stack's buckets (the media bucket is not included).
+          - Sid: PublishReleaseAndSite
+            Effect: Allow
+            Action: [s3:PutObject, s3:GetObject, s3:ListBucket, s3:DeleteObject]
+            Resource:
+              - !Sub "arn:aws:s3:::${AppStackName}-*"
+              - !Sub "arn:aws:s3:::${AppStackName}-*/*"
+          - Sid: SelectRelease
+            Effect: Allow
+            Action: [ssm:PutParameter, ssm:GetParameter]
+            Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*/release"
+          - Sid: RollingDeploy
+            Effect: Allow
+            Action:
+              - autoscaling:StartInstanceRefresh
+              - autoscaling:DescribeInstanceRefreshes
+              - autoscaling:DescribeAutoScalingGroups
+              - autoscaling:CancelInstanceRefresh
+            Resource: "*"
+          - Sid: RefreshCdn
+            Effect: Allow
+            Action: [cloudfront:CreateInvalidation, cloudfront:GetInvalidation]
+            Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/*"
+
+Outputs:
+  DeployRoleArn:
+    Condition: UseOidc
+    Description: GitHub repository variable AWS_DEPLOY_ROLE_ARN.
+    Value: !GetAtt DeployRole.Arn
+  DeployKeySecretName:
+    Condition: UseAccessKey
+    Description: Read once to fill GitHub secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+    Value: !Ref DeployUserKeySecret
