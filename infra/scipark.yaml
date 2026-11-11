@@ -46,7 +46,10 @@ Parameters:
     Default: 10
   NatInstanceType:
     Type: String
-    Default: t4g.nano
+    Default: t4g.micro
+    Description: >-
+      Free-plan accounts may only launch Free Tier instance types (t3.micro, t3.small,
+      t4g.micro, t4g.small, ...), so the smallest eligible ARM size is the default.
 
   AlertEmail:
     Type: String
