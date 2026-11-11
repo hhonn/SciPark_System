@@ -424,8 +424,16 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -euxo pipefail
-          signal() { /opt/aws/bin/cfn-signal -e "$1" --stack ${AWS::StackName} --resource DbInstance --region ${AWS::Region} || true; }
-          trap 'signal 1' ERR
+          # The failing line goes into the CloudFormation event, so a failed
+          # create says where it broke instead of only "FAILURE signal".
+          signal() { /opt/aws/bin/cfn-signal -e "$1" -r "$2" --stack ${AWS::StackName} --resource DbInstance --region ${AWS::Region} || true; }
+          trap 'signal 1 "mongo user-data failed at line $LINENO: $BASH_COMMAND"' ERR
+
+          # The NAT instance boots at the same time; wait until the internet is
+          # reachable through it before downloading anything.
+          for i in $(seq 1 60); do curl -s -o /dev/null --max-time 5 https://repo.mongodb.org && break; sleep 5; done
+          curl -s -o /dev/null --max-time 10 https://repo.mongodb.org
+
           dnf install -y aws-cfn-bootstrap jq amazon-cloudwatch-agent
 
           # --- data volume (nvme1n1 on Nitro), formatted only the first time
@@ -474,6 +482,8 @@ Resources:
           CONF
           systemctl enable --now mongod
           for i in $(seq 1 60); do mongosh --quiet --eval "1" >/dev/null 2>&1 && break; sleep 2; done
+          # Fails (and reports this line) if mongod never came up.
+          mongosh --quiet --eval "1" >/dev/null
 
           # --- replica set + users (idempotent: safe on a re-provisioned box)
           ADMIN=$(aws secretsmanager get-secret-value --region ${AWS::Region} --secret-id ${DbAdminSecret} --query SecretString --output text)
@@ -486,11 +496,17 @@ Resources:
           const admin = conn.getDB("admin");
           let authed = false;
           try { admin.auth(process.env.ADMIN_USER, process.env.ADMIN_PASS); authed = true; } catch (e) {}
-          const status = admin.runCommand({ replSetGetStatus: 1 });
-          if (status.ok !== 1 && status.code === 94) {
-            admin.runCommand({ replSetInitiate: { _id: "rs0", members: [{ _id: 0, host: process.env.DB_HOST + ":27017" }] } });
+          // `hello` needs no authentication. A member started with --replSet but
+          // never initiated reports isreplicaset:true and no setName.
+          const hello = admin.runCommand({ hello: 1 });
+          print("hello: " + JSON.stringify({ setName: hello.setName, isreplicaset: hello.isreplicaset, primary: hello.isWritablePrimary }));
+          if (!hello.setName) {
+            const init = admin.runCommand({ replSetInitiate: { _id: "rs0", members: [{ _id: 0, host: process.env.DB_HOST + ":27017" }] } });
+            print("replSetInitiate: " + JSON.stringify(init));
+            if (init.ok !== 1 && init.code !== 23) throw new Error("replSetInitiate failed: " + JSON.stringify(init));
           }
-          for (let i = 0; i < 60 && !admin.runCommand({ hello: 1 }).isWritablePrimary; i++) sleep(2000);
+          for (let i = 0; i < 90 && !admin.runCommand({ hello: 1 }).isWritablePrimary; i++) sleep(2000);
+          if (!admin.runCommand({ hello: 1 }).isWritablePrimary) throw new Error("replica set never became primary");
           if (!authed) {
             admin.createUser({ user: process.env.ADMIN_USER, pwd: process.env.ADMIN_PASS, roles: ["root"] });
             admin.auth(process.env.ADMIN_USER, process.env.ADMIN_PASS);
@@ -515,7 +531,7 @@ Resources:
           CW
           /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s \
             -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
-          signal 0
+          signal 0 "mongo ready"
 
   # Daily snapshots of the data volume, kept for 7 days.
   BackupRole:
@@ -599,6 +615,8 @@ Resources:
           Fn::Base64: !Sub |
             #!/bin/bash
             set -euxo pipefail
+            # Outbound internet comes through the NAT instance; wait for it.
+            for i in $(seq 1 60); do curl -s -o /dev/null --max-time 5 https://nodejs.org && break; sleep 5; done
             dnf install -y amazon-cloudwatch-agent tar xz
 
             # --- Node.js 22 LTS from nodejs.org, checksum-verified

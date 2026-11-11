@@ -30,12 +30,19 @@ else
   )
 fi
 
+# KEEP_ON_FAILURE=1 keeps whatever was created if something fails, so a broken
+# instance can be inspected (Session Manager, console output) instead of being
+# rolled back and deleted. Fix, then run this script again to continue.
+ROLLBACK=()
+[ "${KEEP_ON_FAILURE:-0}" = "1" ] && ROLLBACK=(--disable-rollback)
+
 aws cloudformation deploy \
   --region "$REGION" \
   --stack-name "$STACK" \
   --template-file "$HERE/scipark.yaml" \
   --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
+  "${ROLLBACK[@]}" \
   --parameter-overrides "AlertEmail=$EMAIL" "${EXTRA[@]}"
 
 aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \
