@@ -3,6 +3,8 @@ import Booking from "../models/bookingModel.js";
 import ParkingSpot from "../models/parkingSpotModel.js";
 import User from "../models/userModel.js";
 import Vehicle from "../models/vehicleModel.js";
+import ParkingZone from "../models/parkingZoneModel.js";
+import { ensureSpotCodes, rotateSpotCode } from "../services/spotCodeService.js";
 import { authorizeCharge, PaymentError } from "../services/paymentService.js";
 import { calculateSessionCost, getEffectiveTier } from "../config/pricing.js";
 import { createNotification } from "../services/notificationService.js";
@@ -320,4 +322,67 @@ export const setStaff = async (req, res) => {
   }
 };
 
-export default { listBookings, adminCancelBooking, forceCheckout, listUsers, setStaff };
+/*
+    @desc   Bays of one lot with the codes for their QR stickers
+    @route  GET /api/admin/spot-codes?zone=<zoneId>
+    @access Admin
+
+    Bays that never had a code get one here, so a new lot is ready to print
+    the first time an admin opens it. Without ?zone the first lot is shown.
+*/
+export const listSpotCodes = async (req, res) => {
+  try {
+    const zones = await ParkingZone.find({}).select("zoneName name building").sort({ zoneName: 1 });
+    const requested = String(req.query.zone || "");
+    const zone = zones.find((z) => z._id.toString() === requested) || zones[0] || null;
+
+    let spots = [];
+    if (zone) {
+      await ensureSpotCodes({ zone: zone._id });
+      spots = await ParkingSpot.find({ zone: zone._id })
+        .select("+checkInCode")
+        .collation({ locale: "en", numericOrdering: true }) // A2 before A10
+        .sort({ spotNumber: 1 });
+    }
+
+    res.json({
+      success: true,
+      zones: zones.map((z) => ({ id: z._id, zoneName: z.zoneName, name: z.name, building: z.building })),
+      zoneId: zone?._id || null,
+      spots: spots.map((s) => ({
+        id: s._id,
+        spotNumber: s.spotNumber,
+        floor: s.floor,
+        code: s.checkInCode,
+      })),
+    });
+  } catch (error) {
+    sendError(res, error, "โหลด QR ช่องจอดไม่สำเร็จ", "Admin list spot codes error");
+  }
+};
+
+/*
+    @desc   New code for one bay (the printed sticker stops working)
+    @route  POST /api/admin/spots/:id/rotate-code
+    @access Admin
+*/
+export const rotateSpotCheckInCode = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) throw new HttpError(404, "ไม่พบช่องจอด");
+
+    const spot = await rotateSpotCode(id);
+    if (!spot) throw new HttpError(404, "ไม่พบช่องจอด");
+
+    logEvent("spot_code_rotated", { spot: spot.spotNumber, admin: req.userId });
+    res.json({
+      success: true,
+      message: `เปลี่ยน QR ของช่อง ${spot.spotNumber} แล้ว QR เดิมใช้ไม่ได้อีก กรุณาพิมพ์ติดใหม่`,
+      spot: { id: spot._id, spotNumber: spot.spotNumber, floor: spot.floor, code: spot.checkInCode },
+    });
+  } catch (error) {
+    sendError(res, error, "เปลี่ยน QR ไม่สำเร็จ", "Admin rotate spot code error");
+  }
+};
+
+export default { listBookings, adminCancelBooking, forceCheckout, listUsers, setStaff, listSpotCodes, rotateSpotCheckInCode };

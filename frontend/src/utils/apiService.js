@@ -33,6 +33,9 @@ export const adminAPI = {
   forceCheckout: (id, note) => api.post(`/admin/bookings/${id}/force-checkout`, { note }),
   getUsers: (params) => api.get('/admin/users', { params }),
   setStaff: (id, isStaff) => api.put(`/admin/users/${id}/staff`, { isStaff }),
+  // Codes for the QR stickers on the bays of a lot, and replacing one.
+  getSpotCodes: (zoneId) => api.get('/admin/spot-codes', { params: { zone: zoneId || undefined } }),
+  rotateSpotCode: (spotId) => api.post(`/admin/spots/${spotId}/rotate-code`),
 }
 
 export const pricingAPI = {
@@ -55,10 +58,14 @@ export const bookingAPI = {
   getHistory: (params) => api.get('/bookings/history', { params }),
   getQRCode: (bookingId) => api.get(`/bookings/${bookingId}/qr`),
   cancelBooking: (bookingId) => api.delete(`/bookings/${bookingId}`),
-  // Self check-in: the phone's GPS fix is the proof of arrival. The other way
-  // in is a staff member scanning the QR (staffAPI.scan).
+  // Self check-in by GPS: the phone's fix is the proof of arrival.
   checkIn: (bookingId, { latitude, longitude, accuracy }) =>
     api.put(`/bookings/${bookingId}/checkin`, { latitude, longitude, accuracy }),
+  // The QR sticker on a bay: read it (changes nothing), then check in with it.
+  // The GPS fields are optional here.
+  scanSpot: ({ spotId, code }) => api.post('/bookings/spot-scan', { spotId, code }),
+  checkInAtSpot: (bookingId, { spotId, code, latitude, longitude, accuracy }) =>
+    api.put(`/bookings/${bookingId}/checkin`, { spotId, code, latitude, longitude, accuracy }),
   checkOut: (bookingId, paymentMethodId) =>
     api.put(`/bookings/${bookingId}/checkout`, { paymentMethodId }),
 }

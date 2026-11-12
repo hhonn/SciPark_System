@@ -66,9 +66,10 @@ export const expirePendingBooking = async (bookingId, now = new Date()) => {
  *
  * @param {object} args
  * @param {string} args.bookingId
- * @param {"staff_scan"|"gps"} args.method
+ * @param {"staff_scan"|"gps"|"spot_qr"} args.method
  * @param {string} [args.staffId]   who scanned, for staff_scan
  * @param {object} [args.location]  { latitude, longitude, accuracy, distanceMeters }, for gps
+ *                                  (and spot_qr when the phone sent a fix)
  * @throws {HttpError} 409 when the booking stopped being pending meanwhile
  */
 export const confirmCheckIn = async ({ bookingId, method, staffId = null, location = null }) => {

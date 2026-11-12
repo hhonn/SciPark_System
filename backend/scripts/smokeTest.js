@@ -814,6 +814,108 @@ const run = async () => {
     assert.equal(off.body.zone.gpsCheckIn, false);
   });
 
+  // --- Bay QR stickers: check-in with no staff on site --------------------
+  console.log('\nBay QR stickers (self check-in without staff)');
+
+  const adminSpotCtrl = await import('../controllers/adminController.js');
+  const qrZone = await ParkingZone.create({
+    zoneName: 'QRLOT', name: 'ลาน QR', totalSpots: 2, ...LOT, checkInRadiusMeters: 100,
+  });
+  await ParkingSpot.create(['Q10', 'Q2'].map((n) => ({ name: n, spotNumber: n, zone: qrZone._id })));
+
+  const qrDriverUser = await User.create({
+    name: 'qrdriver', email: 'qr@test.com', username: 'qrdriver', password: await bcrypt.hash('password123', 10),
+  });
+  const qrUid = qrDriverUser._id.toString();
+  await PaymentMethod.create({ user: qrDriverUser._id, type: 'promptpay', phoneNumber: '0822222222', isDefault: true });
+  await giveCar(qrDriverUser._id);
+
+  let bays = [];
+  await check('opening the print page gives every bay a code, sorted A2 before A10', async () => {
+    const res = await call(adminSpotCtrl.listSpotCodes, { query: { zone: qrZone._id.toString() } });
+    assert.equal(res.status, 200, res.body.message);
+    bays = res.body.spots;
+    assert.deepEqual(bays.map((b) => b.spotNumber), ['Q2', 'Q10']);
+    assert.ok(bays.every((b) => typeof b.code === 'string' && b.code.length >= 20));
+    // Codes stay hidden from ordinary queries.
+    assert.equal((await ParkingSpot.findById(bays[0].id)).checkInCode, undefined);
+  });
+
+  const scan = (body) => call(bookingCtrl.scanSpot, { body, userId: qrUid });
+
+  await check('a wrong or made-up bay code is refused', async () => {
+    const res = await scan({ spotId: bays[0].id.toString(), code: 'not-the-code' });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, 'invalid_spot_qr');
+  });
+
+  await check('scanning a bay with no booking says so', async () => {
+    const res = await scan({ spotId: bays[0].id.toString(), code: bays[0].code });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.state, 'no_booking');
+    assert.equal(res.body.data.spot.spotNumber, 'Q2');
+  });
+
+  const qrBooked = await call(bookingCtrl.createBooking, { body: { zoneId: qrZone._id.toString() }, userId: qrUid });
+  const qrBookingId = qrBooked.body.data?.bookingId?.toString();
+  const qrBooking = await Booking.findById(qrBookingId);
+  const mine = bays.find((b) => String(b.id) === String(qrBooking?.spot));
+  const other = bays.find((b) => b !== mine);
+  const qrCheckIn = (bay, extra = {}) =>
+    call(bookingCtrl.checkIn, {
+      params: { bookingId: qrBookingId },
+      body: { spotId: bay.id.toString(), code: bay.code, ...extra },
+      userId: qrUid,
+    });
+
+  await check('the app learns the booking can be checked in at the bay', async () => {
+    assert.equal(qrBooked.status, 201, qrBooked.body.message);
+    const res = await call(bookingCtrl.getActiveBooking, { userId: qrUid });
+    assert.equal(res.body.data.checkInOptions.spotQr, true);
+  });
+
+  await check('scanning another bay is caught, and cannot check in', async () => {
+    const preview = await scan({ spotId: other.id.toString(), code: other.code });
+    assert.equal(preview.body.data.state, 'wrong_spot');
+    const res = await qrCheckIn(other);
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'wrong_spot');
+    assert.equal((await Booking.findById(qrBookingId)).status, 'pending');
+  });
+
+  await check('scanning the booked bay offers check-in (and asks for GPS where the lot has it)', async () => {
+    const res = await scan({ spotId: mine.id.toString(), code: mine.code });
+    assert.equal(res.body.data.state, 'ready');
+    assert.equal(res.body.data.gpsCheck, true);
+    assert.equal(res.body.data.booking.bookingId.toString(), qrBookingId);
+  });
+
+  await check('a sticker photo used from 1 km away is refused when the phone sends a good fix', async () => {
+    const res = await qrCheckIn(mine, far);
+    assert.equal(res.status, 403);
+    assert.equal(res.body.code, 'too_far');
+    assert.equal((await Booking.findById(qrBookingId)).status, 'pending');
+  });
+
+  await check('scanning the booked bay checks in, with or without GPS', async () => {
+    const res = await qrCheckIn(mine);
+    assert.equal(res.status, 200, res.body.message);
+    const booking = await Booking.findById(qrBookingId);
+    assert.equal(booking.status, 'confirmed');
+    assert.equal(booking.checkInMethod, 'spot_qr');
+    assert.equal((await ParkingSpot.findById(mine.id)).status, 'occupied');
+    const again = await scan({ spotId: mine.id.toString(), code: mine.code });
+    assert.equal(again.body.data.state, 'already_checked_in');
+  });
+
+  await check('rotating a bay code kills the old sticker', async () => {
+    const res = await call(adminSpotCtrl.rotateSpotCheckInCode, { params: { id: other.id.toString() }, userId: uid });
+    assert.equal(res.status, 200, res.body.message);
+    assert.notEqual(res.body.spot.code, other.code);
+    assert.equal((await scan({ spotId: other.id.toString(), code: other.code })).body.code, 'invalid_spot_qr');
+    assert.equal((await scan({ spotId: other.id.toString(), code: res.body.spot.code })).status, 200);
+  });
+
   // --- Phase 3: logic bugs ---------------------------------------------------
   console.log('\nPhase 3: billing and membership logic');
 

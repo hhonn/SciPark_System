@@ -26,6 +26,7 @@ import {
   notifyCheckOutSuccess,
   notifyBookingCancelled,
 } from "../services/notificationService.js";
+import { findSpotByCode } from "../services/spotCodeService.js";
 import { HttpError, sendError } from "../utils/httpError.js";
 import { logEvent } from "../utils/logger.js";
 import { emailVerificationRequired } from "../config/auth.js";
@@ -353,9 +354,10 @@ export const getActiveBooking = async (req, res) => {
         graceMinutes: CHECKIN_GRACE_MINUTES,
         isCheckedIn: booking.isCheckedIn,
         checkInMethod: booking.checkInMethod,
-        // How this booking can be checked in. A staff QR scan always works;
-        // GPS self check-in only where the lot has been given coordinates.
+        // How this booking can be checked in. Scanning the bay's sticker and a
+        // staff scan always work; GPS only where the lot has coordinates.
         checkInOptions: {
+          spotQr: true,
           staffScan: true,
           gps: zoneHasLocation(booking.spot?.zone),
           radiusMeters: booking.spot?.zone?.checkInRadiusMeters || 100,
@@ -461,17 +463,153 @@ const parseLocation = (body = {}) => {
   return valid ? { latitude, longitude, accuracy } : null;
 };
 
+/**
+ * How far from a lot a bay-QR check-in may claim to be, when the phone did
+ * send a decent GPS fix. Generous on purpose: indoor and multi-storey lots
+ * read badly. It only catches a sticker photo being used from somewhere else.
+ */
+const SPOT_QR_MAX_DISTANCE_METERS = 500;
+
+/** The 200 answer shared by every self check-in path. */
+const checkInSucceeded = (res, booking, confirmed, method, extra = {}) => {
+  notifyCheckInSuccess(confirmed.user, {
+    bookingId: confirmed._id,
+    spotName: booking.spot?.spotNumber || booking.spot?.name || "N/A",
+  }).catch(() => {});
+
+  res.status(200).json({
+    success: true,
+    message: "Check-in สำเร็จ ยินดีต้อนรับสู่ที่จอดรถ",
+    data: {
+      bookingId: confirmed._id,
+      checkedInAt: confirmed.actualStartTime,
+      method,
+      ...extra,
+      spot: { spotNumber: booking.spot?.spotNumber, name: booking.spot?.name },
+      zone: { zoneName: booking.spot?.zone?.zoneName },
+      pricing: {
+        bookingFee: confirmed.bookingFee,
+        freeHours: FREE_HOURS,
+        overtimeRate: OVERTIME_RATE,
+        note: `${FREE_HOURS} ชม.แรกฟรี หลังจากนั้น ${OVERTIME_RATE} บาท/ชม.`,
+      },
+    },
+  });
+};
+
+const invalidSpotQr = (res) =>
+  res.status(400).json({
+    success: false,
+    code: "invalid_spot_qr",
+    message: "QR ของช่องจอดนี้ใช้ไม่ได้ (อาจถูกเปลี่ยนใหม่แล้ว) กรุณาแจ้งผู้ดูแลระบบ",
+  });
+
+/** Check in by the QR sticker on the bay the driver booked. */
+const checkInBySpotQr = async (req, res, booking) => {
+  const spot = await findSpotByCode(req.body);
+  if (!spot) return invalidSpotQr(res);
+
+  if (!booking.spot || !spot._id.equals(booking.spot._id)) {
+    return res.status(409).json({
+      success: false,
+      code: "wrong_spot",
+      message: `QR นี้เป็นของช่อง ${spot.spotNumber} แต่คุณจองช่อง ${booking.spot?.spotNumber || booking.spotNumber} กรุณาไปที่ช่องที่จองไว้`,
+      scannedSpot: spot.spotNumber,
+      bookedSpot: booking.spot?.spotNumber || booking.spotNumber,
+    });
+  }
+
+  // GPS is optional here: the sticker is the proof. A fix that is good and
+  // clearly somewhere else means the sticker was photographed and sent on.
+  const zone = spot.zone;
+  const position = parseLocation(req.body);
+  let location = null;
+  if (position && zoneHasLocation(zone)) {
+    const distance = Math.round(distanceMeters(position, zone));
+    location = { ...position, distanceMeters: distance };
+    const limit = Math.max((zone.checkInRadiusMeters || 100) * 3, SPOT_QR_MAX_DISTANCE_METERS);
+    if (position.accuracy <= MAX_GPS_ACCURACY_METERS && distance > limit) {
+      return res.status(403).json({
+        success: false,
+        code: "too_far",
+        message: `ตำแหน่งของคุณอยู่ห่างจากลาน ${zone.zoneName} ประมาณ ${distance} ม. ต้องสแกน QR ที่ช่องจอดจริง`,
+        distanceMeters: distance,
+      });
+    }
+  } else if (position) {
+    location = position;
+  }
+
+  const confirmed = await confirmCheckIn({ bookingId: booking._id, method: "spot_qr", location });
+  logEvent("checkin", { method: "spot_qr", gps: Boolean(location) });
+  return checkInSucceeded(res, booking, confirmed, "spot_qr");
+};
+
+/** Check in by GPS alone, for lots an admin has given coordinates. */
+const checkInByGps = async (req, res, booking) => {
+  const zone = booking.spot?.zone;
+  if (!zoneHasLocation(zone)) {
+    return res.status(403).json({
+      success: false,
+      code: "self_checkin_unavailable",
+      message: "ลานนี้ยังไม่เปิดให้เช็คอินด้วยตำแหน่ง กรุณาสแกน QR ที่ช่องจอด",
+    });
+  }
+
+  const position = parseLocation(req.body);
+  if (!position) {
+    return res.status(400).json({
+      success: false,
+      code: "location_required",
+      message: "ต้องเปิดตำแหน่ง (GPS) เพื่อเช็คอินด้วยตนเอง",
+    });
+  }
+
+  if (position.accuracy > MAX_GPS_ACCURACY_METERS) {
+    return res.status(400).json({
+      success: false,
+      code: "gps_inaccurate",
+      message: `สัญญาณ GPS ไม่แม่นพอ (คลาดเคลื่อน ~${Math.round(position.accuracy)} ม.) ลองออกที่โล่งแล้วลองใหม่ หรือสแกน QR ที่ช่องจอด`,
+      accuracy: Math.round(position.accuracy),
+    });
+  }
+
+  const distance = distanceMeters(position, zone);
+  const radius = zone.checkInRadiusMeters || 100;
+
+  if (distance > radius) {
+    return res.status(403).json({
+      success: false,
+      code: "too_far",
+      message: `คุณอยู่ห่างจากลาน ${zone.zoneName} ประมาณ ${Math.round(distance)} ม. ต้องอยู่ภายใน ${radius} ม. จึงจะเช็คอินได้`,
+      distanceMeters: Math.round(distance),
+      radiusMeters: radius,
+    });
+  }
+
+  const confirmed = await confirmCheckIn({
+    bookingId: booking._id,
+    method: "gps",
+    location: { ...position, distanceMeters: Math.round(distance) },
+  });
+
+  logEvent("checkin", { method: "gps", distanceMeters: Math.round(distance) });
+  return checkInSucceeded(res, booking, confirmed, "gps", { distanceMeters: Math.round(distance) });
+};
+
 /*
-    @desc   Self check-in, proven by the phone's location
+    @desc   Self check-in
     @route  PUT /api/bookings/:bookingId/checkin
     @access Private
 
     This used to accept the QR token as proof of arrival, but the API returned
     that token to the user the moment they booked, so anyone could check in
-    from home. Arrival is now proven one of two ways:
-      - a staff member scans the QR (POST /api/staff/scan), or
-      - here: the phone reports a GPS fix inside the lot's radius. Only lots an
-        admin has given coordinates allow this.
+    from home. Arrival is now proven one of three ways:
+      - here, body { spotId, code }: the driver scanned the QR sticker fixed to
+        the bay they booked (lots have no staff, so this is the normal way),
+      - here, body { latitude, longitude, accuracy }: a GPS fix inside the
+        lot's radius, for lots an admin has given coordinates,
+      - a staff member scans the driver's QR (POST /api/staff/scan).
 */
 export const checkIn = async (req, res) => {
   try {
@@ -510,78 +648,78 @@ export const checkIn = async (req, res) => {
       return expiredResponse(res, booking);
     }
 
-    const zone = booking.spot?.zone;
-    if (!zoneHasLocation(zone)) {
-      return res.status(403).json({
-        success: false,
-        code: "self_checkin_unavailable",
-        message: "ลานนี้ยังไม่เปิดให้เช็คอินด้วยตำแหน่ง กรุณาให้เจ้าหน้าที่สแกน QR Code",
-      });
+    return req.body?.code
+      ? await checkInBySpotQr(req, res, booking)
+      : await checkInByGps(req, res, booking);
+  } catch (error) {
+    sendError(res, error, "เกิดข้อผิดพลาดในการ check-in", "Check-in error");
+  }
+};
+
+/*
+    @desc   Read a scanned bay sticker before checking in
+    @route  POST /api/bookings/spot-scan
+    @access Private
+
+    Changes nothing. Tells the app which bay the sticker belongs to and how
+    that relates to the driver's booking, so it can ask "you are at A-12,
+    confirm arrival?" or explain why not.
+
+    state: ready | wrong_spot | no_booking | already_checked_in |
+           checked_in_elsewhere | expired
+*/
+export const scanSpot = async (req, res) => {
+  try {
+    const spot = await findSpotByCode(req.body);
+    if (!spot) return invalidSpotQr(res);
+
+    const booking = await Booking.findOne({
+      user: req.userId,
+      status: { $in: ["pending", "confirmed"] },
+    }).sort({ createdAt: -1 });
+
+    const here = booking ? booking.spot?.equals(spot._id) : false;
+    let state;
+    if (!booking) {
+      state = "no_booking";
+    } else if (booking.status === "confirmed") {
+      state = here ? "already_checked_in" : "checked_in_elsewhere";
+    } else if (new Date() > booking.checkInDeadline) {
+      await expireAndNotify(booking);
+      state = "expired";
+    } else {
+      state = here ? "ready" : "wrong_spot";
     }
 
-    const position = parseLocation(req.body);
-    if (!position) {
-      return res.status(400).json({
-        success: false,
-        code: "location_required",
-        message: "ต้องเปิดตำแหน่ง (GPS) เพื่อเช็คอินด้วยตนเอง",
-      });
-    }
-
-    if (position.accuracy > MAX_GPS_ACCURACY_METERS) {
-      return res.status(400).json({
-        success: false,
-        code: "gps_inaccurate",
-        message: `สัญญาณ GPS ไม่แม่นพอ (คลาดเคลื่อน ~${Math.round(position.accuracy)} ม.) ลองออกที่โล่งแล้วลองใหม่ หรือให้เจ้าหน้าที่สแกน QR`,
-        accuracy: Math.round(position.accuracy),
-      });
-    }
-
-    const distance = distanceMeters(position, zone);
-    const radius = zone.checkInRadiusMeters || 100;
-
-    if (distance > radius) {
-      return res.status(403).json({
-        success: false,
-        code: "too_far",
-        message: `คุณอยู่ห่างจากลาน ${zone.zoneName} ประมาณ ${Math.round(distance)} ม. ต้องอยู่ภายใน ${radius} ม. จึงจะเช็คอินได้`,
-        distanceMeters: Math.round(distance),
-        radiusMeters: radius,
-      });
-    }
-
-    const confirmed = await confirmCheckIn({
-      bookingId: booking._id,
-      method: "gps",
-      location: { ...position, distanceMeters: Math.round(distance) },
-    });
-
-    notifyCheckInSuccess(confirmed.user, {
-      bookingId: confirmed._id,
-      spotName: booking.spot?.spotNumber || booking.spot?.name || "N/A",
-    }).catch(() => {});
-
-    logEvent("checkin", { method: "gps", distanceMeters: Math.round(distance) });
-    res.status(200).json({
+    res.json({
       success: true,
-      message: "Check-in สำเร็จ ยินดีต้อนรับสู่ที่จอดรถ",
       data: {
-        bookingId: confirmed._id,
-        checkedInAt: confirmed.actualStartTime,
-        method: "gps",
-        distanceMeters: Math.round(distance),
-        spot: { spotNumber: booking.spot?.spotNumber, name: booking.spot?.name },
-        zone: { zoneName: zone.zoneName },
-        pricing: {
-          bookingFee: confirmed.bookingFee,
-          freeHours: FREE_HOURS,
-          overtimeRate: OVERTIME_RATE,
-          note: `${FREE_HOURS} ชม.แรกฟรี หลังจากนั้น ${OVERTIME_RATE} บาท/ชม.`,
+        state,
+        spot: {
+          id: spot._id,
+          spotNumber: spot.spotNumber,
+          floor: spot.floor,
+          zoneId: spot.zone?._id,
+          zoneName: spot.zone?.zoneName || spot.zoneName,
+          zoneLabel: spot.zone?.name || "",
+          building: spot.zone?.building || spot.building,
         },
+        // Ask the phone for a GPS fix only where there is a lot to compare it to.
+        gpsCheck: zoneHasLocation(spot.zone),
+        booking: booking
+          ? {
+              bookingId: booking._id,
+              status: booking.status,
+              spotNumber: booking.spotNumber,
+              zoneName: booking.zoneName,
+              checkInDeadline: booking.checkInDeadline,
+              bookingFee: booking.bookingFee,
+            }
+          : null,
       },
     });
   } catch (error) {
-    sendError(res, error, "เกิดข้อผิดพลาดในการ check-in", "Check-in error");
+    sendError(res, error, "อ่าน QR ไม่สำเร็จ", "Spot scan error");
   }
 };
 

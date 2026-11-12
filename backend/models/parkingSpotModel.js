@@ -38,6 +38,13 @@ const parkingSpotSchema = new mongoose.Schema({
   facilities: [{
     type: String,
   }],
+  // Printed on the QR sticker at this bay. Scanning it is how a driver proves
+  // they have arrived. Hidden from normal queries; see spotCodeService.
+  checkInCode: {
+    type: String,
+    default: null,
+    select: false,
+  },
 }, {
   timestamps: true,
 });

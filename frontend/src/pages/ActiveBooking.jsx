@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Wallet,
   LocateFixed,
+  ScanLine,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Button from '../components/ui/Button'
@@ -27,6 +28,7 @@ import { usePricing } from '../stores/pricingStore'
 import { formatCountdown, formatDuration, formatTHB, formatTime } from '../utils/format'
 import { cn } from '../utils/cn'
 import { getPosition, geolocationErrorMessage } from '../utils/geolocation'
+import SpotScanner from '../components/SpotScanner'
 
 const POLL_INTERVAL = 20_000
 // While the QR is on screen a staff member may scan it at any moment.
@@ -43,6 +45,7 @@ const ActiveBooking = () => {
   const [busy, setBusy] = useState(false)
   const [qrImage, setQrImage] = useState(null)
   const [qrOpen, setQrOpen] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [receipt, setReceipt] = useState(null)
   const [remainingMs, setRemainingMs] = useState(0)
@@ -167,6 +170,16 @@ const ActiveBooking = () => {
       setBusy(false)
     }
   }
+
+  // The bay's sticker was read: confirm on the same page the phone's own
+  // camera app would have opened.
+  const goArrive = useCallback(
+    ({ spotId, code }) => {
+      setScanOpen(false)
+      navigate(`/app/arrive?${new URLSearchParams({ s: spotId, c: code })}`)
+    },
+    [navigate]
+  )
 
   const handleCheckOut = async () => {
     setBusy(true)
@@ -342,9 +355,7 @@ const ActiveBooking = () => {
             >
               {remainingMs <= 0
                 ? 'หมดเวลาแล้ว ระบบกำลังยกเลิกการจอง'
-                : activeBooking.checkInOptions?.gps
-                  ? 'ถึงลานแล้ว ให้เจ้าหน้าที่สแกน QR หรือเช็คอินด้วยตำแหน่ง'
-                  : 'ถึงลานแล้ว ให้เจ้าหน้าที่สแกน QR เพื่อเช็คอิน'}
+                : 'จอดรถในช่องที่จองแล้ว สแกน QR ที่ติดอยู่ที่ช่องเพื่อเช็คอิน'}
             </p>
           </>
         ) : (
@@ -459,13 +470,34 @@ const ActiveBooking = () => {
             <Button
               size="lg"
               fullWidth
-              icon={QrCode}
-              onClick={openQr}
-              loading={busy}
-              disabled={remainingMs <= 0}
+              icon={ScanLine}
+              onClick={() => setScanOpen(true)}
+              disabled={busy || remainingMs <= 0}
               className={cn(remainingMs > 0 && remainingMs <= URGENT_MS && 'animate-pulse-ring')}
             >
-              เปิด QR Code เช็คอิน
+              สแกน QR ที่ช่องจอด
+            </Button>
+            {activeBooking.checkInOptions?.gps && (
+              <Button
+                variant="soft"
+                fullWidth
+                icon={LocateFixed}
+                onClick={handleGpsCheckIn}
+                loading={busy}
+                disabled={remainingMs <= 0}
+              >
+                เช็คอินด้วยตำแหน่ง (GPS)
+              </Button>
+            )}
+            {/* For lots that do have an attendant. */}
+            <Button
+              variant="ghost"
+              fullWidth
+              icon={QrCode}
+              onClick={openQr}
+              disabled={busy || remainingMs <= 0}
+            >
+              แสดง QR ให้เจ้าหน้าที่สแกน
             </Button>
             <Button
               variant="danger-soft"
@@ -490,13 +522,6 @@ const ActiveBooking = () => {
         onClose={() => setQrOpen(false)}
         title="QR Code เช็คอิน"
         description={`ช่อง ${spot?.spotNumber} · ${zone?.name}`}
-        footer={
-          activeBooking.checkInOptions?.gps ? (
-            <Button fullWidth size="lg" variant="soft" icon={LocateFixed} onClick={handleGpsCheckIn} loading={busy}>
-              เช็คอินด้วยตำแหน่ง (GPS)
-            </Button>
-          ) : null
-        }
       >
         <div className="text-center">
           {qrImage ? (
@@ -512,17 +537,25 @@ const ActiveBooking = () => {
           <p className="mt-4 text-small text-content-muted">
             แสดง QR นี้ให้เจ้าหน้าที่ที่ลานจอดสแกน หน้านี้จะอัปเดตเองเมื่อเช็คอินสำเร็จ
           </p>
-          {activeBooking.checkInOptions?.gps && (
-            <p className="mt-1 text-small text-content-muted">
-              หรือถ้าอยู่ในลานแล้ว (ภายใน {activeBooking.checkInOptions.radiusMeters} ม.) กดเช็คอินด้วยตำแหน่งได้
-            </p>
-          )}
+          <p className="mt-1 text-small text-content-muted">
+            ถ้าไม่มีเจ้าหน้าที่ ให้ปิดหน้าต่างนี้แล้วกด &ldquo;สแกน QR ที่ช่องจอด&rdquo;
+          </p>
 
           <p className="mt-2 inline-flex items-center gap-1.5 font-mono text-small font-semibold text-warn tabular">
             <Clock3 className="w-4 h-4" />
             เหลือ {formatCountdown(remainingMs)}
           </p>
         </div>
+      </Modal>
+
+      {/* ---- Scan the bay's sticker ---- */}
+      <Modal
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        title="สแกน QR ที่ช่องจอด"
+        description={`ช่องที่จองไว้: ${spot?.spotNumber} · ${zone?.name}`}
+      >
+        {scanOpen && <SpotScanner onSpot={goArrive} />}
       </Modal>
 
       {/* ---- Cancel confirmation ---- */}

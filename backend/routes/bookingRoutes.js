@@ -8,6 +8,7 @@ import {
   getBookingHistory,
   checkIn,
   checkOut,
+  scanSpot,
 } from "../controllers/bookingController.js";
 import { authenticateUser } from "../middleware/userAuth.js";
 import { bookingLimiter } from "../middleware/security.js";
@@ -19,6 +20,8 @@ router.use(authenticateUser);
 router.post("/", bookingLimiter, createBooking);
 router.get("/active", getActiveBooking);
 router.get("/history", getBookingHistory);
+// Read a bay's QR sticker. Changes nothing; the check-in is PUT .../checkin.
+router.post("/spot-scan", scanSpot);
 router.get("/:bookingId/qr", getBookingQR);
 router.put("/:bookingId/checkin", checkIn);
 router.put("/:bookingId/checkout", checkOut);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, XCircle, LogOut, ShieldCheck, Users, Ticket, ScanLine, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, XCircle, LogOut, ShieldCheck, Users, Ticket, ScanLine, ChevronLeft, ChevronRight, QrCode } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
@@ -12,6 +12,7 @@ import { adminAPI } from '../utils/apiService'
 import { apiErrorMessage } from '../utils/api'
 import { formatDateTime, formatTHB } from '../utils/format'
 import { cn } from '../utils/cn'
+import SpotQrSheet from '../components/SpotQrSheet'
 
 const BOOKING_FILTERS = [
   { id: 'active', label: 'ใช้งานอยู่' },
@@ -21,6 +22,8 @@ const BOOKING_FILTERS = [
   { id: 'completed', label: 'เสร็จสิ้น' },
   { id: 'cancelled', label: 'ยกเลิก' },
 ]
+
+const CHECKIN_METHOD = { gps: 'GPS', staff_scan: 'เจ้าหน้าที่สแกน', spot_qr: 'QR ช่องจอด' }
 
 const STATUS_BADGE = {
   pending: { tone: 'warn', label: 'รอเช็คอิน' },
@@ -166,7 +169,7 @@ const BookingsTab = () => {
                       <dt className="text-content-subtle">เช็คอิน</dt>
                       <dd className="text-content text-right">
                         {formatDateTime(b.actualStartTime)}
-                        {b.checkInMethod && ` (${b.checkInMethod === 'gps' ? 'GPS' : 'สแกน'})`}
+                        {b.checkInMethod && ` (${CHECKIN_METHOD[b.checkInMethod] || b.checkInMethod})`}
                       </dd>
                     </>
                   )}
@@ -328,25 +331,29 @@ const UsersTab = () => {
 const TABS = [
   { id: 'bookings', label: 'การจอง', icon: Ticket },
   { id: 'users', label: 'ผู้ใช้', icon: Users },
+  { id: 'spotQr', label: 'QR ช่องจอด', icon: QrCode },
 ]
+
+const TAB_VIEWS = { bookings: BookingsTab, users: UsersTab, spotQr: SpotQrSheet }
 
 const Admin = () => {
   const navigate = useNavigate()
   const [tab, setTab] = useState('bookings')
+  const View = TAB_VIEWS[tab]
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-h1 text-content">ผู้ดูแลระบบ</h1>
-          <p className="mt-1 text-small text-content-muted">จัดการการจองที่ค้าง และสิทธิ์เจ้าหน้าที่</p>
+          <p className="mt-1 text-small text-content-muted">จัดการการจองที่ค้าง สิทธิ์เจ้าหน้าที่ และ QR ของช่องจอด</p>
         </div>
         <Button variant="outline" icon={ScanLine} className="shrink-0" onClick={() => navigate('/app/staff')}>
           สแกน / พิกัดลาน
         </Button>
       </header>
 
-      <div className="flex gap-1 p-1 rounded-md bg-surface-2 w-fit" role="tablist">
+      <div className="flex gap-1 p-1 rounded-md bg-surface-2 w-fit max-w-full overflow-x-auto" role="tablist">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -364,7 +371,7 @@ const Admin = () => {
         ))}
       </div>
 
-      {tab === 'bookings' ? <BookingsTab /> : <UsersTab />}
+      <View />
     </div>
   )
 }

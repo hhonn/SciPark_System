@@ -17,6 +17,7 @@ import ActiveBooking from './pages/ActiveBooking'
 import Privileges from './pages/Privileges'
 import Profile from './pages/Profile'
 import PaymentMethods from './pages/PaymentMethods'
+import Arrive from './pages/Arrive'
 import { PageLoader } from './components/ui/Loading'
 import NotFound from './pages/NotFound'
 
@@ -52,10 +53,19 @@ function AdminRoute({ children }) {
   return isAdminUser(user) ? children : <Navigate to="/app" replace />
 }
 
-/** Keeps signed-in users out of the login/register screens. */
+/**
+ * Keeps signed-in users out of the login/register screens.
+ *
+ * Honours the page the visitor was sent here from. React Router 7 runs
+ * navigations as transitions, so right after a login this re-renders (with
+ * the user now signed in) before Login's own navigate(from) lands; sending
+ * everyone to /app here used to win that race and lose the page they wanted,
+ * e.g. a bay's QR link opened while signed out.
+ */
 function PublicOnlyRoute({ children }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  return isAuthenticated ? <Navigate to="/app" replace /> : children
+  const location = useLocation()
+  return isAuthenticated ? <Navigate to={location.state?.from || '/app'} replace /> : children
 }
 
 function App() {
@@ -129,6 +139,8 @@ function App() {
         <Route index element={<Home />} />
         <Route path="parking/:id" element={<ParkingDetail />} />
         <Route path="booking" element={<ActiveBooking />} />
+        {/* Where a bay's QR sticker leads; see utils/spotQr.js. */}
+        <Route path="arrive" element={<Arrive />} />
         <Route path="privileges" element={<Privileges />} />
         <Route path="profile" element={<Profile />} />
         <Route path="payment-methods" element={<PaymentMethods />} />

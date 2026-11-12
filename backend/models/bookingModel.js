@@ -121,7 +121,7 @@ const bookingSchema = new mongoose.Schema({
   // API had just handed the user, so a booking could be "checked in" from home.
   checkInMethod: {
     type: String,
-    enum: ["staff_scan", "gps", null],
+    enum: ["staff_scan", "gps", "spot_qr", null],
     default: null,
   },
   // The staff member whose scan checked this booking in.
