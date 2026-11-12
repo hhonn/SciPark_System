@@ -127,6 +127,8 @@ app.use(cors((req, callback) => {
 // It is public, so it says only whether this instance can serve, plus which
 // release and instance answered — that is what lets a rolling deploy be seen
 // switching over without a single failed request.
+const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString();
+
 const health = async (req, res) => {
   const mongoose = await import('mongoose');
   const dbUp = mongoose.default.connection.readyState === 1;
@@ -139,6 +141,9 @@ const health = async (req, res) => {
     ...(process.env.RELEASE_ID && { release: process.env.RELEASE_ID }),
     ...(process.env.INSTANCE_ID && { instance: process.env.INSTANCE_ID }),
     ...(process.env.AVAILABILITY_ZONE && { zone: process.env.AVAILABILITY_ZONE }),
+    // When this process started, so a deploy timeline shows each new
+    // instance coming up.
+    startedAt: PROCESS_STARTED_AT,
   });
 };
 app.get('/health', health);
