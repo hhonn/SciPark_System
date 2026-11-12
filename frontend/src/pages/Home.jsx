@@ -146,7 +146,7 @@ const Home = () => {
                   <span className="font-mono font-semibold text-content">
                     {activeBooking.spot?.spotNumber}
                   </span>{' '}
-                  · {activeBooking.zone?.name}
+                  ลาน {activeBooking.zone?.name}
                 </p>
                 {activeBooking.status === 'pending' && activeBooking.timeRemainingToCheckIn && (
                   <p className="mt-1 font-mono text-small font-semibold text-warn tabular">

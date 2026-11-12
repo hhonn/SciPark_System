@@ -70,7 +70,7 @@ export const notifyCheckOutSuccess = async (userId, bookingData, paymentSummary)
     userId,
     "checkout_success",
     "🚗 Check-out สำเร็จ!",
-    `จอดรถทั้งหมด ${paymentSummary.duration} • ค่าใช้จ่าย ${paymentSummary.total} บาท`,
+    `จอดรถทั้งหมด ${paymentSummary.duration} ค่าใช้จ่ายรวม ${paymentSummary.total} บาท`,
     { 
       bookingId: bookingData.bookingId, 
       duration: paymentSummary.duration,

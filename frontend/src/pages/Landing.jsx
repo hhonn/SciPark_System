@@ -160,7 +160,7 @@ const Landing = () => {
               <span className="text-micro font-medium text-content">
                 {loaded && totalSpots > 0
                   ? `ตอนนี้ว่าง ${totalAvailable} จาก ${totalSpots} ช่อง`
-                  : 'คณะวิทยาศาสตร์ · สจล.'}
+                  : 'คณะวิทยาศาสตร์ สจล.'}
               </span>
             </div>
 
@@ -383,7 +383,7 @@ const Landing = () => {
           <div className="flex items-center gap-2.5">
             <Logo className="w-7 h-7" />
             <span className="text-small text-content-muted">
-              SciPark · คณะวิทยาศาสตร์ สจล.
+              SciPark ระบบจองที่จอดรถ คณะวิทยาศาสตร์ สจล.
             </span>
           </div>
           <nav className="flex items-center gap-5 text-small text-content-muted">

@@ -48,7 +48,8 @@ const SpotCard = ({ spot }) => (
       <p className="text-micro text-content-subtle">ช่องที่สแกน</p>
       <p className="font-mono text-4xl font-semibold text-brand-600 tabular mt-0.5">{spot.spotNumber}</p>
       <p className="mt-1 text-small text-content-muted truncate">
-        {[spot.zoneLabel || spot.zoneName, spot.floor, spot.building].filter(Boolean).join(' · ')}
+        {[spot.zoneLabel || spot.zoneName, spot.floor].filter(Boolean).join(' ')}
+        {spot.building && <span className="block truncate">{spot.building}</span>}
       </p>
     </div>
     <span className="w-12 h-12 rounded-md bg-brand-500/10 text-brand-600 flex items-center justify-center shrink-0">

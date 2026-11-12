@@ -516,10 +516,12 @@ const ParkingDetail = () => {
           {(selectedVehicleData || selectedPaymentData) && (
             <p className="flex items-center gap-2 text-micro text-content-subtle">
               <Car className="w-3.5 h-3.5 shrink-0" />
-              {selectedVehicleData
-                ? `${selectedVehicleData.licensePlate} · `
-                : ''}
-              {selectedPaymentData?.displayName || ''}
+              {[
+                selectedVehicleData?.licensePlate,
+                selectedPaymentData?.displayName && `จ่ายด้วย ${selectedPaymentData.displayName}`,
+              ]
+                .filter(Boolean)
+                .join(' ')}
             </p>
           )}
         </div>

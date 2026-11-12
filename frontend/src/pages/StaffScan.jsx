@@ -47,7 +47,7 @@ const ScanResult = ({ result, onNext }) => {
       </p>
       {data.vehicle && (
         <p className="text-small text-content-muted">
-          {[data.vehicle.brand, data.vehicle.model, data.vehicle.color].filter(Boolean).join(' · ')}
+          {[data.vehicle.brand, data.vehicle.model, data.vehicle.color].filter(Boolean).join(' ')}
         </p>
       )}
 

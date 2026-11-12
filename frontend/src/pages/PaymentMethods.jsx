@@ -195,7 +195,9 @@ const PaymentMethods = () => {
                   {method.cardHolderName && (
                     <p className="text-small text-content-muted truncate">
                       {method.cardHolderName}
-                      {method.expiryMonth && ` · หมดอายุ ${method.expiryMonth}/${method.expiryYear}`}
+                      {method.expiryMonth && (
+                        <span className="ml-3">หมดอายุ {method.expiryMonth}/{method.expiryYear}</span>
+                      )}
                     </p>
                   )}
                 </div>

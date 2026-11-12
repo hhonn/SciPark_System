@@ -35,14 +35,14 @@ const printStickers = async (zone, spots, images) => {
     return
   }
 
-  const place = escapeHtml([zone?.zoneName, zone?.name].filter(Boolean).join(' · '))
+  const place = escapeHtml(zone?.name ? `${zone.name} (${zone.zoneName})` : zone?.zoneName || '')
   const stickers = spots
     .map(
       (s) => `
       <div class="sticker">
         <p class="brand">SciPark</p>
         <p class="spot">${escapeHtml(s.spotNumber)}</p>
-        <p class="place">${place}${s.floor ? ` · ${escapeHtml(s.floor)}` : ''}</p>
+        <p class="place">${place}${s.floor ? ` ${escapeHtml(s.floor)}` : ''}</p>
         <img src="${images[s.id]}" alt="">
         <p class="hint">จอดแล้วสแกนด้วยกล้องมือถือเพื่อเช็คอิน</p>
       </div>`
@@ -136,7 +136,7 @@ const SpotQrSheet = () => {
           >
             {zones.map((z) => (
               <option key={z.id} value={z.id}>
-                {z.zoneName}{z.name ? ` · ${z.name}` : ''}
+                {z.name ? `${z.name} (${z.zoneName})` : z.zoneName}
               </option>
             ))}
           </select>

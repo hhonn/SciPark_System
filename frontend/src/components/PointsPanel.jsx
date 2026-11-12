@@ -79,10 +79,11 @@ const PointsPanel = ({ onChange }) => {
       <div className="rounded-md bg-surface-2 p-3 text-small text-content-muted space-y-0.5">
         <p>
           จอดเสร็จ (เช็คอินและเช็คเอาต์) ได้ <strong className="text-content">{rules.completedSession}</strong> แต้ม
-          {' · '}ออกภายใน {rules.freeHours} ชม. ฟรี โบนัส <strong className="text-content">+{rules.onTimeBonus}</strong>
+          ถ้าออกภายใน {rules.freeHours} ชม. ฟรี ได้โบนัสอีก <strong className="text-content">+{rules.onTimeBonus}</strong>
         </p>
+        <p>ระดับของคุณได้แต้ม ×{rules.multiplier}</p>
         <p>
-          ระดับของคุณได้แต้ม ×{rules.multiplier} · จองแล้วไม่มาไม่ได้แต้ม · แต้มหมดอายุถ้าไม่ได้ใช้งาน {Math.round(rules.inactivityExpiryDays / 30)} เดือน
+          จองแล้วไม่มาไม่ได้แต้ม และแต้มจะหมดอายุถ้าไม่ได้ใช้งาน {Math.round(rules.inactivityExpiryDays / 30)} เดือน
         </p>
       </div>
 
@@ -147,7 +148,7 @@ const PointsPanel = ({ onChange }) => {
         open={Boolean(confirm)}
         onClose={() => !busy && setConfirm(null)}
         title={`แลก "${confirm?.name}"?`}
-        description={confirm && `ใช้ ${confirm.cost} แต้ม · คงเหลือ ${balance - confirm.cost} แต้ม`}
+        description={confirm && `ใช้ ${confirm.cost} แต้ม เหลือ ${balance - confirm.cost} แต้ม`}
         footer={
           <div className="flex gap-3">
             <Button variant="outline" fullWidth disabled={busy} onClick={() => setConfirm(null)}>ยกเลิก</Button>

@@ -150,7 +150,8 @@ const BookingsTab = () => {
                   <div className="min-w-0">
                     <p className="font-mono text-h3 text-content tabular">{b.vehicle?.licensePlate || 'ไม่ระบุทะเบียน'}</p>
                     <p className="text-small text-content-muted truncate">
-                      {b.user?.name} · {b.user?.email}
+                      {b.user?.name}
+                      <span className="block text-micro text-content-subtle truncate">{b.user?.email}</span>
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
@@ -161,7 +162,7 @@ const BookingsTab = () => {
 
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-small">
                   <dt className="text-content-subtle">ช่องจอด</dt>
-                  <dd className="text-content text-right">{b.zoneName} · {b.spotNumber}</dd>
+                  <dd className="text-content text-right">{b.zoneName} ช่อง {b.spotNumber}</dd>
                   <dt className="text-content-subtle">จองเมื่อ</dt>
                   <dd className="text-content text-right">{formatDateTime(b.createdAt)}</dd>
                   {b.actualStartTime && (
@@ -205,7 +206,7 @@ const BookingsTab = () => {
         open={Boolean(action)}
         onClose={() => !busy && setAction(null)}
         title={action?.kind === 'cancel' ? 'ยกเลิกการจองนี้?' : 'เช็คเอาต์แทนผู้จอง?'}
-        description={action && `${action.booking.vehicle?.licensePlate || ''} · ช่อง ${action.booking.spotNumber}`}
+        description={action && `${action.booking.vehicle?.licensePlate ? `ทะเบียน ${action.booking.vehicle.licensePlate} ` : ''}ช่อง ${action.booking.spotNumber}`}
         footer={
           <div className="flex gap-3">
             <Button variant="outline" fullWidth disabled={busy} onClick={() => setAction(null)}>

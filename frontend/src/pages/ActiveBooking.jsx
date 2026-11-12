@@ -313,8 +313,8 @@ const ActiveBooking = () => {
               <p className="text-small text-content">
                 ได้รับ{' '}
                 <span className="font-mono font-semibold tabular">{receipt.pointsEarned}</span> แต้ม
-                · รวม{' '}
-                <span className="font-mono font-semibold tabular">{receipt.totalPoints}</span> แต้ม
+                {' '}(รวม{' '}
+                <span className="font-mono font-semibold tabular">{receipt.totalPoints}</span> แต้ม)
               </p>
             </div>
           )}
@@ -423,7 +423,7 @@ const ActiveBooking = () => {
       <section className="bg-surface border border-hairline rounded-lg p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-micro text-content-subtle">{isPending ? 'บัตรจอด · ช่องของคุณ' : 'ช่องจอดของคุณ'}</p>
+            <p className="text-micro text-content-subtle">{isPending ? 'บัตรจอด' : 'ช่องจอดของคุณ'}</p>
             <p className="font-mono text-4xl font-semibold text-brand-600 tabular mt-0.5">
               {spot?.spotNumber}
             </p>
@@ -602,7 +602,7 @@ const ActiveBooking = () => {
         open={scanOpen}
         onClose={() => setScanOpen(false)}
         title={scanLabel}
-        description={`ช่องที่จองไว้: ${spot?.spotNumber} · ${zone?.name}`}
+        description={`ช่องที่จองไว้ ${spot?.spotNumber} ลาน ${zone?.name}`}
       >
         {scanOpen && (
           <SpotScanner
@@ -615,7 +615,7 @@ const ActiveBooking = () => {
       </Modal>
 
       {/* ---- Ticket QR, large ---- */}
-      <Modal open={qrBig} onClose={() => setQrBig(false)} title="QR ของการจอง" description={`ช่อง ${spot?.spotNumber} · ${zone?.name}`}>
+      <Modal open={qrBig} onClose={() => setQrBig(false)} title="QR ของการจอง" description={`ช่อง ${spot?.spotNumber} ลาน ${zone?.name}`}>
         {qrImage && (
           <img
             src={qrImage}

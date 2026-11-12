@@ -109,7 +109,7 @@ const LotLocations = ({ onChange }) => {
               <p className="text-micro text-content-muted truncate">{zone.name}</p>
             </div>
             {zone.gpsCheckIn ? (
-              <Badge tone="ok" dot>GPS เปิด · {zone.checkInRadiusMeters} ม.</Badge>
+              <Badge tone="ok" dot>GPS รัศมี {zone.checkInRadiusMeters} ม.</Badge>
             ) : (
               <Badge tone="neutral">ยังไม่ตั้งพิกัด</Badge>
             )}

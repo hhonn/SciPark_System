@@ -47,10 +47,10 @@ const LegalPage = ({ title, updated, sections }) => (
 
             {section.items && (
               <ul className="mt-3 space-y-2">
-                {section.items.map((item) => (
+                {section.items.map((item, i) => (
                   <li key={item} className="flex gap-3 text-content-muted leading-relaxed">
-                    <span className="text-brand-500 shrink-0" aria-hidden="true">
-                      •
+                    <span className="w-5 shrink-0 text-right font-mono text-small text-brand-600 tabular" aria-hidden="true">
+                      {i + 1}.
                     </span>
                     {item}
                   </li>

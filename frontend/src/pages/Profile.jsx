@@ -346,7 +346,7 @@ const Profile = () => {
                   <p className="font-mono text-h3 text-content">{vehicle.licensePlate}</p>
                   <p className="text-small text-content-muted truncate">
                     {vehicle.brand} {vehicle.model}
-                    {vehicle.color ? ` · ${vehicle.color}` : ''}
+                    {vehicle.color ? ` ${vehicle.color}` : ''}
                   </p>
                 </div>
 

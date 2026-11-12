@@ -75,9 +75,8 @@ const ZoneCard = ({ zone, className }) => {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="text-h3 text-content truncate">{zone.name}</h3>
-                <p className="mt-0.5 flex items-center gap-2 text-small text-content-muted">
+                <p className="mt-0.5 flex items-center gap-3 text-small text-content-muted">
                   <span className="font-mono text-content-subtle">{zone.zoneName}</span>
-                  <span aria-hidden="true">·</span>
                   <span className="inline-flex items-center gap-1">
                     <Footprints className="w-3.5 h-3.5" aria-hidden="true" />
                     เดิน {zone.walkMinutes ?? '-'} นาที

@@ -8,6 +8,7 @@ import { adminAPI } from '../../utils/apiService'
 import { apiErrorMessage } from '../../utils/api'
 import { formatDateTime, formatTHB, formatTime } from '../../utils/format'
 import { cn } from '../../utils/cn'
+import Facts from '../ui/Facts'
 
 /**
  * Admin overview. Charts are plain HTML bars: one series each, except the
@@ -45,7 +46,7 @@ const Stat = ({ label, value, sub }) => (
   <div className="bg-surface border border-hairline rounded-lg p-4">
     <p className="text-small text-content-muted">{label}</p>
     <p className="mt-1 font-mono text-3xl font-semibold text-content tabular">{value}</p>
-    {sub && <p className="mt-1 text-micro text-content-muted">{sub}</p>}
+    {sub && <p className="mt-1 text-micro text-content-muted">{Array.isArray(sub) ? <Facts items={sub} /> : sub}</p>}
   </div>
 )
 
@@ -102,7 +103,7 @@ const LotBars = ({ lots }) => {
             <div className="flex items-baseline justify-between gap-3 mb-1.5">
               <p className="text-small text-content truncate">
                 <span className="font-semibold">{lot.zoneName}</span>
-                <span className="text-content-muted"> · {lot.name}</span>
+                <span className="ml-2 text-content-muted">{lot.name}</span>
               </p>
               <p className="text-small text-content-muted shrink-0">
                 ว่าง <span className="font-mono text-content tabular">{lot.available}</span>/{lot.total - lot.closed}
@@ -114,7 +115,7 @@ const LotBars = ({ lots }) => {
                   key={s.key}
                   className={cn('h-full', s.className)}
                   style={{ width: `${pct(s.n)}%` }}
-                  onMouseEnter={(e) => tip.show(e, `${lot.zoneName} · ${s.label} ${s.n} ช่อง`)}
+                  onMouseEnter={(e) => tip.show(e, `${lot.zoneName}: ${s.label} ${s.n} ช่อง`)}
                 />
               ))}
               <div className="flex-1" />
@@ -122,13 +123,12 @@ const LotBars = ({ lots }) => {
                 <div
                   className="h-full"
                   style={{ width: `${pct(lot.closed)}%`, ...hatch }}
-                  onMouseEnter={(e) => tip.show(e, `${lot.zoneName} · ปิดใช้งาน ${lot.closed} ช่อง`)}
+                  onMouseEnter={(e) => tip.show(e, `${lot.zoneName}: ปิดใช้งาน ${lot.closed} ช่อง`)}
                 />
               )}
             </div>
             <p className="mt-1 text-micro text-content-muted">
-              จอด {lot.occupied} · รอเช็คอิน {lot.reserved}
-              {lot.closed > 0 ? ` · ปิด ${lot.closed}` : ''}
+              <Facts items={[`จอด ${lot.occupied}`, `รอเช็คอิน ${lot.reserved}`, lot.closed > 0 && `ปิด ${lot.closed}`]} />
             </p>
           </div>
         )
@@ -227,17 +227,17 @@ const AdminDashboard = () => {
         <Stat
           label="ช่องว่างตอนนี้"
           value={`${totals.available}/${open}`}
-          sub={`จอด ${totals.occupied} · รอเช็คอิน ${totals.reserved}${totals.closed ? ` · ปิด ${totals.closed}` : ''}`}
+          sub={[`จอด ${totals.occupied}`, `รอเช็คอิน ${totals.reserved}`, totals.closed > 0 && `ปิด ${totals.closed}`]}
         />
         <Stat
           label="การจองวันนี้"
           value={today.bookings}
-          sub={`เช็คอิน ${today.checkedIn} · รอ ${today.waiting} · ไม่มา ${today.noShows}`}
+          sub={[`เช็คอิน ${today.checkedIn}`, `รอ ${today.waiting}`, `ไม่มา ${today.noShows}`]}
         />
         <Stat
           label="รายได้วันนี้"
           value={formatTHB(today.revenue)}
-          sub={`ค่าจอง ${formatTHB(today.fees)} · เกินเวลา ${formatTHB(today.overtime)}`}
+          sub={[`ค่าจอง ${formatTHB(today.fees)}`, `เกินเวลา ${formatTHB(today.overtime)}`]}
         />
         <Stat label="รายได้ 7 วัน" value={formatTHB(weekRevenue)} sub="ค่าจองรวมค่าจอดเกินเวลาที่เก็บได้" />
       </div>
@@ -289,7 +289,7 @@ const AdminDashboard = () => {
               key: r.date,
               label: dayLabel(r.date),
               value: r.total,
-              tip: `${dayLabel(r.date)}: ${formatTHB(r.total)} (ค่าจอง ${formatTHB(r.fees)} · เกินเวลา ${formatTHB(r.overtime)})`,
+              tip: `${dayLabel(r.date)}: ${formatTHB(r.total)} (ค่าจอง ${formatTHB(r.fees)} และเกินเวลา ${formatTHB(r.overtime)})`,
             }))}
           />
         </Card>

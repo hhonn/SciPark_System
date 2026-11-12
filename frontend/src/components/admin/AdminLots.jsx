@@ -9,6 +9,7 @@ import { Spinner } from '../ui/Loading'
 import { adminAPI } from '../../utils/apiService'
 import { apiErrorMessage } from '../../utils/api'
 import { cn } from '../../utils/cn'
+import Facts from '../ui/Facts'
 import LotLocations from './LotLocations'
 import SpotQrSheet from './SpotQrSheet'
 
@@ -197,7 +198,7 @@ const LotSpots = ({ lot, onChanged }) => {
     <section className="bg-surface border border-hairline rounded-lg p-4 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-h3 text-content">
-          ช่องจอดของ {lot.zoneName} <span className="text-content-muted font-normal">· {lot.name}</span>
+          ช่องจอดของ {lot.zoneName} <span className="ml-1 text-content-muted font-normal">({lot.name})</span>
         </h3>
         <div className="flex flex-wrap gap-1.5" aria-label="คำอธิบายสี">
           {Object.entries(SPOT_STYLE).map(([key, { box, label }]) => (
@@ -229,7 +230,7 @@ const LotSpots = ({ lot, onChanged }) => {
                   type="button"
                   onClick={() => toggle(s)}
                   disabled={busyId === s.id}
-                  title={[style.label, s.booking?.licensePlate].filter(Boolean).join(' · ')}
+                  title={[style.label, s.booking?.licensePlate && `ทะเบียน ${s.booking.licensePlate}`].filter(Boolean).join(' ')}
                   aria-label={`ช่อง ${s.spotNumber} ${style.label}${s.booking?.licensePlate ? ` ทะเบียน ${s.booking.licensePlate}` : ''}`}
                   className={cn(
                     'w-full h-14 rounded-md border flex flex-col items-center justify-center transition-opacity',
@@ -345,13 +346,13 @@ const AdminLots = () => {
                       )}
                     </div>
                     <p className="mt-3 text-small text-content-muted">
-                      <span className="font-mono text-content tabular">{lot.spots.total}</span> ช่อง · ว่าง{' '}
-                      <span className="font-mono text-content tabular">{lot.spots.available}</span>
-                      {lot.spots.closed > 0 && (
-                        <>
-                          {' '}· ปิด <span className="font-mono text-content tabular">{lot.spots.closed}</span>
-                        </>
-                      )}
+                      <Facts
+                        items={[
+                          `ทั้งหมด ${lot.spots.total} ช่อง`,
+                          `ว่าง ${lot.spots.available}`,
+                          lot.spots.closed > 0 && `ปิด ${lot.spots.closed}`,
+                        ]}
+                      />
                     </p>
                   </button>
                 </li>

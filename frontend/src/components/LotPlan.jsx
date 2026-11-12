@@ -36,7 +36,7 @@ const LotPlan = ({ spots = [], className }) => {
     for (const spot of spots) {
       // "A01" -> row "A". Anything unexpected falls into its own bucket rather
       // than being dropped from the plan.
-      const row = /^[A-Za-z]/.test(spot.spotNumber) ? spot.spotNumber[0].toUpperCase() : '·'
+      const row = /^[A-Za-z]/.test(spot.spotNumber) ? spot.spotNumber[0].toUpperCase() : '#'
       if (!grouped.has(row)) grouped.set(row, [])
       grouped.get(row).push(spot)
     }
