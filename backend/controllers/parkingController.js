@@ -34,6 +34,8 @@ export const getAllZones = async (req, res) => {
 
     const byZone = new Map();
     for (const row of counts) {
+      // A bay an admin closed is not part of what a driver can get.
+      if (row._id.status === "closed") continue;
       const key = String(row._id.zone);
       const entry = byZone.get(key) || { total: 0, available: 0, occupied: 0, reserved: 0 };
       entry.total += row.count;
@@ -98,7 +100,7 @@ export const getZoneById = async (req, res) => {
 
     const spots = await ParkingSpot.find({ zone: id }).sort({ spotNumber: 1 });
 
-    const totalSpots = spots.length;
+    const totalSpots = spots.filter((s) => s.status !== "closed").length;
     const availableSpots = spots.filter((s) => s.status === "available").length;
     const occupiedSpots = spots.filter((s) => s.status === "occupied").length;
     const reservedSpots = spots.filter((s) => s.status === "reserved").length;
@@ -313,6 +315,7 @@ export const getParkingStats = async (req, res) => {
     const counts = { available: 0, occupied: 0, reserved: 0 };
     let totalSpots = 0;
     for (const row of statusCounts) {
+      if (row._id === "closed") continue;
       totalSpots += row.count;
       if (row._id in counts) counts[row._id] += row.count;
     }

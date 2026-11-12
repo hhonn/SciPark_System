@@ -53,6 +53,12 @@ function AdminRoute({ children }) {
   return isAdminUser(user) ? children : <Navigate to="/app" replace />
 }
 
+/** /app: drivers get the lot finder, admins their dashboard. */
+function DriverHome() {
+  const user = useAuthStore((s) => s.user)
+  return isAdminUser(user) ? <Navigate to="/app/admin" replace /> : <Home />
+}
+
 /**
  * Keeps signed-in users out of the login/register screens.
  *
@@ -136,7 +142,7 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Home />} />
+        <Route index element={<DriverHome />} />
         <Route path="parking/:id" element={<ParkingDetail />} />
         <Route path="booking" element={<ActiveBooking />} />
         {/* Where a bay's QR sticker leads; see utils/spotQr.js. */}
@@ -154,16 +160,24 @@ function App() {
             </StaffRoute>
           }
         />
-        <Route
-          path="admin"
-          element={
-            <AdminRoute>
-              <Suspense fallback={<PageLoader />}>
-                <Admin />
-              </Suspense>
-            </AdminRoute>
-          }
-        />
+        {[
+          ['admin', 'dashboard'],
+          ['admin/bookings', 'bookings'],
+          ['admin/lots', 'lots'],
+          ['admin/users', 'users'],
+        ].map(([path, section]) => (
+          <Route
+            key={path}
+            path={path}
+            element={
+              <AdminRoute>
+                <Suspense fallback={<PageLoader />}>
+                  <Admin section={section} />
+                </Suspense>
+              </AdminRoute>
+            }
+          />
+        ))}
       </Route>
 
       {/* A real 404. The old catch-all silently redirected to "/", so a typo in

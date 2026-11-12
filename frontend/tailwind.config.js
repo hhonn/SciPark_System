@@ -54,6 +54,9 @@ export default {
         'warn-soft': withVar('--warn-soft'),
         risk: withVar('--risk'),
         'risk-soft': withVar('--risk-soft'),
+        // Admin dashboard chart marks (validated pair, see index.css).
+        'chart-occupied': withVar('--chart-occupied'),
+        'chart-reserved': withVar('--chart-reserved'),
       },
       fontFamily: {
         sans: ['Anuphan', 'Noto Sans Thai', 'system-ui', 'sans-serif'],

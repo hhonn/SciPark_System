@@ -23,6 +23,11 @@ const STATUS = {
     box: 'bg-surface-2 border-hairline text-content-subtle',
     label: 'มีรถจอด',
   },
+  // Taken out of booking by an admin.
+  closed: {
+    box: 'bg-surface-2 border-dashed border-hairline text-content-subtle line-through',
+    label: 'ปิดใช้งาน',
+  },
 }
 
 const LotPlan = ({ spots = [], className }) => {

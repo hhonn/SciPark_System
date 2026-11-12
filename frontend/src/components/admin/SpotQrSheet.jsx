@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { Printer, RefreshCw, QrCode } from 'lucide-react'
 import toast from 'react-hot-toast'
-import Button from './ui/Button'
-import EmptyState from './ui/EmptyState'
-import { Spinner } from './ui/Loading'
-import { adminAPI } from '../utils/apiService'
-import { apiErrorMessage } from '../utils/api'
-import { spotQrUrl } from '../utils/spotQr'
+import Button from '../ui/Button'
+import EmptyState from '../ui/EmptyState'
+import { Spinner } from '../ui/Loading'
+import { adminAPI } from '../../utils/apiService'
+import { apiErrorMessage } from '../../utils/api'
+import { spotQrUrl } from '../../utils/spotQr'
 
 /**
  * Admin tab: the QR sticker for every bay of a lot, ready to print.

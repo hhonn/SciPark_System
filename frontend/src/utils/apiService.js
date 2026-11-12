@@ -36,6 +36,13 @@ export const adminAPI = {
   // Codes for the QR stickers on the bays of a lot, and replacing one.
   getSpotCodes: (zoneId) => api.get('/admin/spot-codes', { params: { zone: zoneId || undefined } }),
   rotateSpotCode: (spotId) => api.post(`/admin/spots/${spotId}/rotate-code`),
+  getDashboard: () => api.get('/admin/dashboard'),
+  // Lots and bays.
+  getLots: () => api.get('/admin/lots'),
+  createLot: ({ zoneName, name, building }) => api.post('/admin/lots', { zoneName, name, building }),
+  getLotSpots: (lotId) => api.get(`/admin/lots/${lotId}/spots`),
+  addLotSpots: (lotId, { spots, floor }) => api.post(`/admin/lots/${lotId}/spots`, { spots, floor }),
+  setSpotClosed: (spotId, closed) => api.put(`/admin/spots/${spotId}/closed`, { closed }),
 }
 
 export const pricingAPI = {

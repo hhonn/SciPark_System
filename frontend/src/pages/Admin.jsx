@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Search, XCircle, LogOut, ShieldCheck, Users, Ticket, ScanLine, ChevronLeft, ChevronRight, QrCode } from 'lucide-react'
+import { Search, XCircle, LogOut, ShieldCheck, Users, Ticket, ScanLine, ChevronLeft, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
@@ -12,7 +11,8 @@ import { adminAPI } from '../utils/apiService'
 import { apiErrorMessage } from '../utils/api'
 import { formatDateTime, formatTHB } from '../utils/format'
 import { cn } from '../utils/cn'
-import SpotQrSheet from '../components/SpotQrSheet'
+import AdminDashboard from '../components/admin/AdminDashboard'
+import AdminLots from '../components/admin/AdminLots'
 
 const BOOKING_FILTERS = [
   { id: 'active', label: 'ใช้งานอยู่' },
@@ -328,49 +328,39 @@ const UsersTab = () => {
   )
 }
 
-const TABS = [
-  { id: 'bookings', label: 'การจอง', icon: Ticket },
-  { id: 'users', label: 'ผู้ใช้', icon: Users },
-  { id: 'spotQr', label: 'QR ช่องจอด', icon: QrCode },
-]
+const SECTIONS = {
+  dashboard: {
+    title: 'แดชบอร์ด',
+    description: 'ภาพรวมลานจอด การจอง และรายได้ อัปเดตทุก 30 วินาที',
+    View: AdminDashboard,
+  },
+  bookings: {
+    title: 'การจอง',
+    description: 'ค้นหาการจอง ยกเลิกการจองที่ค้าง หรือเช็คเอาต์แทนผู้ใช้',
+    View: BookingsTab,
+  },
+  lots: {
+    title: 'ลานและช่องจอด',
+    description: 'เพิ่มลานและช่อง ปิดช่องที่ใช้ไม่ได้ ตั้งพิกัด GPS และพิมพ์ QR ของช่อง',
+    View: AdminLots,
+  },
+  users: {
+    title: 'ผู้ใช้',
+    description: 'ค้นหาผู้ใช้และตั้งสิทธิ์เจ้าหน้าที่',
+    View: UsersTab,
+  },
+}
 
-const TAB_VIEWS = { bookings: BookingsTab, users: UsersTab, spotQr: SpotQrSheet }
-
-const Admin = () => {
-  const navigate = useNavigate()
-  const [tab, setTab] = useState('bookings')
-  const View = TAB_VIEWS[tab]
+/** One admin screen per menu entry; see components/layout/navItems.js. */
+const Admin = ({ section = 'dashboard' }) => {
+  const { title, description, View } = SECTIONS[section] || SECTIONS.dashboard
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-h1 text-content">ผู้ดูแลระบบ</h1>
-          <p className="mt-1 text-small text-content-muted">จัดการการจองที่ค้าง สิทธิ์เจ้าหน้าที่ และ QR ของช่องจอด</p>
-        </div>
-        <Button variant="outline" icon={ScanLine} className="shrink-0" onClick={() => navigate('/app/staff')}>
-          สแกน / พิกัดลาน
-        </Button>
+    <div className={cn('mx-auto space-y-5', section === 'dashboard' || section === 'lots' ? 'max-w-5xl' : 'max-w-3xl')}>
+      <header>
+        <h1 className="text-h1 text-content">{title}</h1>
+        <p className="mt-1 text-small text-content-muted">{description}</p>
       </header>
-
-      <div className="flex gap-1 p-1 rounded-md bg-surface-2 w-fit max-w-full overflow-x-auto" role="tablist">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            onClick={() => setTab(id)}
-            className={cn(
-              'h-9 px-4 rounded-sm inline-flex items-center gap-2 text-small font-medium transition-colors duration-fast',
-              tab === id ? 'bg-surface text-content shadow-e1' : 'text-content-muted hover:text-content'
-            )}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </button>
-        ))}
-      </div>
-
       <View />
     </div>
   )

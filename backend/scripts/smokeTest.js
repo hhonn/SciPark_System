@@ -1489,6 +1489,93 @@ const run = async () => {
     assert.ok(parsed.ts);
   });
 
+  // --- Admin: dashboard, lots and bays ---------------------------------------
+  console.log('\nAdmin: dashboard, lots and bays');
+
+  const lotsCtrl = await import('../controllers/adminLotsController.js');
+  const dashCtrl = await import('../controllers/adminDashboardController.js');
+
+  await check('bay numbers: ranges keep their padding, junk is refused', () => {
+    assert.deepEqual(lotsCtrl.parseSpotNumbers('a01-a03, B9 b9 C10'), ['A01', 'A02', 'A03', 'B9', 'C10']);
+    assert.deepEqual(lotsCtrl.parseSpotNumbers('7-9'), ['7', '8', '9']);
+    assert.throws(() => lotsCtrl.parseSpotNumbers('A5-A1'), /มากกว่า/);
+    assert.throws(() => lotsCtrl.parseSpotNumbers('A1-A999'), /ไม่เกิน/);
+    assert.throws(() => lotsCtrl.parseSpotNumbers('ช่อง1'), /อ่านเลขช่อง/);
+  });
+
+  let newLotId;
+  await check('an admin adds a lot, then its bays (existing ones are skipped)', async () => {
+    const made = await call(lotsCtrl.createLot, { body: { zoneName: 'eng-b', name: 'ลานวิศวะ' }, userId: uid });
+    assert.equal(made.status, 201, made.body.message);
+    assert.equal(made.body.lot.zoneName, 'ENG-B');
+    newLotId = made.body.lot.id.toString();
+    assert.equal((await call(lotsCtrl.createLot, { body: { zoneName: 'ENG-B', name: 'ซ้ำ' } })).status, 409);
+
+    const first = await call(lotsCtrl.addLotSpots, { params: { id: newLotId }, body: { spots: 'E01-E03' }, userId: uid });
+    assert.equal(first.status, 201, first.body.message);
+    const again = await call(lotsCtrl.addLotSpots, { params: { id: newLotId }, body: { spots: 'E03-E04' }, userId: uid });
+    assert.deepEqual(again.body.added, ['E04']);
+    assert.deepEqual(again.body.skipped, ['E03']);
+    assert.equal((await ParkingZone.findById(newLotId)).totalSpots, 4);
+  });
+
+  await check('a closed bay is never booked, and cannot be closed while in use', async () => {
+    const spots = (await call(lotsCtrl.listLotSpots, { params: { id: newLotId } })).body.spots;
+    assert.deepEqual(spots.map((s) => s.spotNumber), ['E01', 'E02', 'E03', 'E04']);
+    for (const s of spots.slice(1)) {
+      const res = await call(lotsCtrl.setSpotClosed, { params: { id: s.id.toString() }, body: { closed: true }, userId: uid });
+      assert.equal(res.status, 200, res.body.message);
+    }
+    // One bay left open: the next booking must land on it.
+    const driverId = await bareDriver('lots@test.com', 'lotsdriver');
+    await giveCar(driverId);
+    const booked = await call(bookingCtrl.createBooking, { body: { zoneId: newLotId }, userId: driverId });
+    assert.equal(booked.status, 201, booked.body.message);
+    const held = await Booking.findById(booked.body.data.bookingId);
+    assert.equal(String(held.spot), String(spots[0].id));
+
+    const busy = await call(lotsCtrl.setSpotClosed, { params: { id: spots[0].id.toString() }, body: { closed: true }, userId: uid });
+    assert.equal(busy.status, 409);
+    assert.equal(busy.body.code, 'spot_in_use');
+
+    // Drivers see the closed bays as not part of the lot.
+    const zone = (await call(parkingCtrl.getZoneById, { params: { id: newLotId } })).body.zone;
+    assert.equal(zone.totalSpots, 1);
+    await call(bookingCtrl.cancelBooking, { params: { id: held._id.toString() }, userId: driverId });
+
+    const reopened = await call(lotsCtrl.setSpotClosed, { params: { id: spots[1].id.toString() }, body: { closed: false }, userId: uid });
+    assert.equal(reopened.body.spot.status, 'available');
+  });
+
+  await check('the dashboard counts lots, today, money and what needs attention', async () => {
+    // A car parked 13 hours ago that never checked out.
+    const forgetful = await bareDriver('forgot@test.com', 'forgetful');
+    await giveCar(forgetful);
+    const b = await call(bookingCtrl.createBooking, { body: { zoneId: newLotId }, userId: forgetful });
+    assert.equal(b.status, 201, b.body.message);
+    await confirmCheckIn({ bookingId: b.body.data.bookingId, method: 'gps' });
+    await Booking.findByIdAndUpdate(b.body.data.bookingId, { actualStartTime: new Date(Date.now() - 13 * 3600 * 1000) });
+
+    const res = await call(dashCtrl.getDashboard, { userId: uid });
+    assert.equal(res.status, 200, res.body.message);
+    const d = res.body;
+    const lot = d.lots.find((l) => l.zoneName === 'ENG-B');
+    assert.deepEqual({ occupied: lot.occupied, closed: lot.closed, total: lot.total }, { occupied: 1, closed: 2, total: 4 });
+    assert.equal(d.revenue.length, 7);
+    assert.equal(d.bookingsByHour.length, 24);
+    assert.ok(d.today.bookings >= 2);
+    assert.ok(d.today.revenue >= 40, `today's revenue ${d.today.revenue}`);
+    assert.equal(d.revenue[6].total, d.today.revenue);
+    assert.ok(d.attention.longParked.some((x) => String(x.bookingId) === String(b.body.data.bookingId)));
+  });
+
+  await check('a Bangkok day starts at 17:00 UTC the day before', () => {
+    const start = dashCtrl.bangkokDayStart(new Date('2026-11-13T16:30:00Z')); // 23:30 in Bangkok
+    assert.equal(start.toISOString(), '2026-11-12T17:00:00.000Z');
+    const next = dashCtrl.bangkokDayStart(new Date('2026-11-13T17:30:00Z')); // 00:30 next day
+    assert.equal(next.toISOString(), '2026-11-13T17:00:00.000Z');
+  });
+
   // --- Teardown -----------------------------------------------------------
   await mongoose.disconnect();
   await mongo.stop();

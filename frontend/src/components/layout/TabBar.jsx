@@ -11,8 +11,8 @@ import { cn } from '../../utils/cn'
  */
 const TabBar = () => {
   const activeBooking = useBookingStore((s) => s.activeBooking)
-  // At most five fit a phone; the admin screen is reached from the scanner page.
-  const items = useNavItems().filter((item) => !item.adminOnly)
+  // At most five fit a phone: a driver has four (five for staff), an admin five.
+  const items = useNavItems().slice(0, 5)
 
   return (
     <nav

@@ -28,7 +28,8 @@ const parkingSpotSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["available", "occupied", "reserved"],
+    // closed: taken out of booking by an admin (repairs, an event).
+    enum: ["available", "occupied", "reserved", "closed"],
     default: "available",
   },
   pricePerHour: {
