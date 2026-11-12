@@ -1584,6 +1584,42 @@ const run = async () => {
     assert.ok(d.attention.longParked.some((x) => String(x.bookingId) === String(b.body.data.bookingId)));
   });
 
+  await check('the ticket QR stays the same until rotated (screenshots keep working)', async () => {
+    const lot = await call(lotsCtrl.createLot, { body: { zoneName: 'DEMO', name: 'ลานเดโม' } });
+    await call(lotsCtrl.addLotSpots, { params: { id: lot.body.lot.id.toString() }, body: { spots: 'D01-D02' } });
+    global.__demoLot = lot.body.lot.id.toString();
+    const d = await bareDriver('demo@test.com', 'demodriver');
+    await giveCar(d);
+    const booked = await call(bookingCtrl.createBooking, { body: { zoneId: global.__demoLot }, userId: d });
+    assert.equal(booked.status, 201, booked.body.message);
+    const id = booked.body.data.bookingId.toString();
+    const first = await call(bookingCtrl.getBookingQR, { params: { bookingId: id }, query: {}, userId: d });
+    const again = await call(bookingCtrl.getBookingQR, { params: { bookingId: id }, query: {}, userId: d });
+    assert.equal(first.body.data.token, booked.body.data.qrCode.token, 'the code issued at booking is the one shown');
+    assert.equal(again.body.data.token, first.body.data.token);
+    const rotated = await call(bookingCtrl.getBookingQR, { params: { bookingId: id }, query: { rotate: '1' }, userId: d });
+    assert.notEqual(rotated.body.data.token, first.body.data.token);
+    global.__demo = { driver: d, bookingId: id, stale: first.body.data.token, token: rotated.body.data.token };
+  });
+
+  await check('demo lots only: scanning your own ticket QR checks in', async () => {
+    const { driver: d, bookingId: id, stale, token } = global.__demo;
+    const selfScan = (qrPayload) => call(bookingCtrl.checkIn, { params: { bookingId: id }, body: { qrPayload }, userId: d });
+
+    const off = await selfScan(token);
+    assert.equal(off.status, 403, 'refused while the lot switch is off');
+
+    const on = await call(lotsCtrl.updateLot, { params: { id: global.__demoLot }, body: { ticketSelfScan: true } });
+    assert.equal(on.body.lot.ticketSelfScan, true);
+    const opts = (await call(bookingCtrl.getActiveBooking, { userId: d })).body.data.checkInOptions;
+    assert.equal(opts.ticketScan, true);
+
+    assert.equal((await selfScan(stale)).body.code, 'invalid_qr', 'a replaced code is refused');
+    const ok = await selfScan(token);
+    assert.equal(ok.status, 200, ok.body.message);
+    assert.equal((await Booking.findById(id)).checkInMethod, 'ticket_scan');
+  });
+
   await check('a Bangkok day starts at 17:00 UTC the day before', () => {
     const start = dashCtrl.bangkokDayStart(new Date('2026-11-13T16:30:00Z')); // 23:30 in Bangkok
     assert.equal(start.toISOString(), '2026-11-12T17:00:00.000Z');

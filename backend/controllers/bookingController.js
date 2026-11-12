@@ -4,7 +4,7 @@ import ParkingSpot from "../models/parkingSpotModel.js";
 import ParkingZone from "../models/parkingZoneModel.js";
 import Vehicle from "../models/vehicleModel.js";
 import User from "../models/userModel.js";
-import { generateBookingQRCode } from "../services/qrCodeService.js";
+import { generateBookingQRCode, verifyScan } from "../services/qrCodeService.js";
 import {
   MAX_GPS_ACCURACY_METERS,
   distanceMeters,
@@ -196,9 +196,9 @@ export const createBooking = async (req, res) => {
       // Issue the QR credential before committing so its hash is persisted
       // with the booking. The old code generated a QR that was never stored,
       // so it vanished on the first page refresh and could never be verified.
+      newBooking.qrIssuedAt = new Date();
       qrCode = await generateBookingQRCode(newBooking);
       newBooking.qrTokenHash = qrCode.tokenHash;
-      newBooking.qrIssuedAt = new Date();
 
       await newBooking.save({ session });
     });
@@ -283,7 +283,7 @@ export const getActiveBooking = async (req, res) => {
       .populate({
         path: "spot",
         select: "spotNumber name floor building pricePerHour facilities",
-        populate: { path: "zone", select: "zoneName name building latitude longitude checkInRadiusMeters spotStickers" },
+        populate: { path: "zone", select: "zoneName name building latitude longitude checkInRadiusMeters spotStickers ticketSelfScan" },
       })
       .populate("vehicle", "licensePlate brand model");
 
@@ -358,6 +358,8 @@ export const getActiveBooking = async (req, res) => {
         // staff scan always work; GPS only where the lot has coordinates.
         checkInOptions: {
           spotQr: Boolean(booking.spot?.zone?.spotStickers),
+          // Demo lots only: scanning the ticket's own QR checks in.
+          ticketScan: Boolean(booking.spot?.zone?.ticketSelfScan),
           staffScan: true,
           gps: zoneHasLocation(booking.spot?.zone),
           radiusMeters: booking.spot?.zone?.checkInRadiusMeters || 100,
@@ -397,7 +399,7 @@ export const getBookingQR = async (req, res) => {
       return res.status(404).json({ success: false, message: "ไม่พบการจอง" });
     }
 
-    const booking = await Booking.findOne({ _id: req.params.bookingId, user: req.userId });
+    const booking = await Booking.findOne({ _id: req.params.bookingId, user: req.userId }).select("+qrTokenHash");
 
     if (!booking) {
       return res.status(404).json({ success: false, message: "ไม่พบการจอง" });
@@ -409,11 +411,16 @@ export const getBookingQR = async (req, res) => {
       });
     }
 
-    // Rotate the credential on re-issue, so an old screenshot stops working.
-    const qrCode = await generateBookingQRCode(booking);
-    booking.qrTokenHash = qrCode.tokenHash;
-    booking.qrIssuedAt = new Date();
-    await booking.save();
+    // The same code every time, so a screenshot or a second screen keeps
+    // working. ?rotate=1 replaces it (an old screenshot then stops working);
+    // so does a booking whose stored code predates derived tokens.
+    let qrCode = booking.qrIssuedAt ? await generateBookingQRCode(booking) : null;
+    if (!qrCode || qrCode.tokenHash !== booking.qrTokenHash || req.query?.rotate === "1") {
+      booking.qrIssuedAt = new Date();
+      qrCode = await generateBookingQRCode(booking);
+      booking.qrTokenHash = qrCode.tokenHash;
+      await booking.save();
+    }
 
     res.status(200).json({
       success: true,
@@ -570,6 +577,39 @@ const checkInBySpotQr = async (req, res, booking) => {
   return checkInSucceeded(res, booking, confirmed, "spot_qr");
 };
 
+/**
+ * DEMO ONLY: check in by scanning the QR on the driver's own ticket, for lots
+ * an admin switched this on. Off everywhere else, because holding your own
+ * ticket proves nothing about where you are.
+ */
+const checkInByTicket = async (req, res, booking) => {
+  const zone = booking.spot?.zone;
+  if (!zone?.ticketSelfScan) {
+    return res.status(403).json({
+      success: false,
+      code: "self_checkin_unavailable",
+      message: "ลานนี้ไม่เปิดให้สแกน QR บนบัตรจอดเพื่อเช็คอินเอง",
+    });
+  }
+
+  const withHash = await Booking.findById(booking._id).select("+qrTokenHash");
+  const scan = verifyScan(withHash, withHash.qrTokenHash, req.body.qrPayload);
+  if (!scan.valid) {
+    return res.status(400).json({ success: false, code: "invalid_qr", message: scan.reason });
+  }
+
+  let location = parseLocation(req.body);
+  if (zoneHasLocation(zone)) {
+    const inLot = checkInLot(req.body, zone, { hint: "ลองออกที่โล่งแล้วสแกนใหม่" });
+    if (!inLot.location) return res.status(inLot.status).json(inLot.body);
+    location = inLot.location;
+  }
+
+  const confirmed = await confirmCheckIn({ bookingId: booking._id, method: "ticket_scan", location });
+  logEvent("checkin", { method: "ticket_scan" });
+  return checkInSucceeded(res, booking, confirmed, "ticket_scan");
+};
+
 /** Check in by GPS alone, for lots an admin has given coordinates. */
 const checkInByGps = async (req, res, booking) => {
   const zone = booking.spot?.zone;
@@ -616,7 +656,7 @@ export const checkIn = async (req, res) => {
     const booking = await Booking.findById(bookingId).populate({
       path: "spot",
       select: "spotNumber name floor building zone",
-      populate: { path: "zone", select: "zoneName latitude longitude checkInRadiusMeters" },
+      populate: { path: "zone", select: "zoneName latitude longitude checkInRadiusMeters ticketSelfScan" },
     });
 
     if (!booking) {
@@ -642,9 +682,9 @@ export const checkIn = async (req, res) => {
       return expiredResponse(res, booking);
     }
 
-    return req.body?.code
-      ? await checkInBySpotQr(req, res, booking)
-      : await checkInByGps(req, res, booking);
+    if (req.body?.code) return await checkInBySpotQr(req, res, booking);
+    if (req.body?.qrPayload) return await checkInByTicket(req, res, booking);
+    return await checkInByGps(req, res, booking);
   } catch (error) {
     sendError(res, error, "เกิดข้อผิดพลาดในการ check-in", "Check-in error");
   }

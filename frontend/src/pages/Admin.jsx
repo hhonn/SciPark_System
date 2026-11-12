@@ -23,7 +23,7 @@ const BOOKING_FILTERS = [
   { id: 'cancelled', label: 'ยกเลิก' },
 ]
 
-const CHECKIN_METHOD = { gps: 'GPS', staff_scan: 'เจ้าหน้าที่สแกน', spot_qr: 'QR ช่องจอด' }
+const CHECKIN_METHOD = { gps: 'GPS', staff_scan: 'เจ้าหน้าที่สแกน', spot_qr: 'QR ช่องจอด', ticket_scan: 'สแกนบัตร (เดโม)' }
 
 const STATUS_BADGE = {
   pending: { tone: 'warn', label: 'รอเช็คอิน' },

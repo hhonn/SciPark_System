@@ -112,3 +112,36 @@ export function useQrScanner(onDetect) {
 }
 
 export default useQrScanner
+
+/**
+ * Read a QR from a picture (a screenshot of the ticket, say): one phone
+ * cannot point its camera at its own screen. Returns the text, or null.
+ */
+export async function decodeQrImage(file) {
+  const [{ default: jsQR }, url] = [await import('jsqr'), URL.createObjectURL(file)]
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = reject
+      el.src = url
+    })
+    // Phone photos are huge (jsQR is quick up to ~1600px and slow beyond),
+    // while a cropped screenshot can be tiny: bring either to 800-1600px.
+    // Enlarging is done without smoothing so the modules stay sharp.
+    const longest = Math.max(img.naturalWidth, img.naturalHeight)
+    const scale = Math.min(1600 / longest, Math.max(1, 800 / longest))
+    const width = Math.round(img.naturalWidth * scale)
+    const height = Math.round(img.naturalHeight * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    ctx.imageSmoothingEnabled = scale < 1
+    ctx.drawImage(img, 0, 0, width, height)
+    const code = jsQR(ctx.getImageData(0, 0, width, height).data, width, height, { inversionAttempts: 'attemptBoth' })
+    return code?.data || null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}

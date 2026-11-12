@@ -81,6 +81,13 @@ const parkingZoneSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // DEMO ONLY: a driver may check in by scanning the QR on their own ticket.
+  // That proves nothing about where they are (they hold the ticket anywhere),
+  // so a lot that has coordinates still needs a GPS fix inside its radius.
+  ticketSelfScan: {
+    type: Boolean,
+    default: false,
+  },
 }, { timestamps: true });
 
 // Index already created by unique: true on zoneName field

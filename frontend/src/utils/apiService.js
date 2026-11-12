@@ -72,6 +72,9 @@ export const bookingAPI = {
   // The QR sticker on a bay: read it (changes nothing), then check in with it.
   // The GPS fields are optional here.
   scanSpot: ({ spotId, code }) => api.post('/bookings/spot-scan', { spotId, code }),
+  // Demo lots only: the QR on the driver's own ticket.
+  checkInWithTicket: (bookingId, { qrPayload, latitude, longitude, accuracy }) =>
+    api.put(`/bookings/${bookingId}/checkin`, { qrPayload, latitude, longitude, accuracy }),
   checkInAtSpot: (bookingId, { spotId, code, latitude, longitude, accuracy }) =>
     api.put(`/bookings/${bookingId}/checkin`, { spotId, code, latitude, longitude, accuracy }),
   checkOut: (bookingId, paymentMethodId) =>

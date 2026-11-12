@@ -42,6 +42,7 @@ const ActiveBooking = () => {
   const [busy, setBusy] = useState(false)
   const [qrImage, setQrImage] = useState(null)
   const [scanOpen, setScanOpen] = useState(false)
+  const [qrBig, setQrBig] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [receipt, setReceipt] = useState(null)
   const [remainingMs, setRemainingMs] = useState(0)
@@ -167,6 +168,41 @@ const ActiveBooking = () => {
       setBusy(false)
     }
   }
+
+  /**
+   * Demo lots: the driver scanned the QR on their own ticket. Where the lot
+   * has coordinates the server also wants a fix inside it.
+   */
+  const handleTicketScan = useCallback(
+    async (qrPayload) => {
+      setScanOpen(false)
+      let location = {}
+      if (activeBooking?.checkInOptions?.gps) {
+        try {
+          const { coords } = await getPosition()
+          location = { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy }
+        } catch (error) {
+          toast.error(geolocationErrorMessage(error))
+          return
+        }
+      }
+      setBusy(true)
+      try {
+        await bookingAPI.checkInWithTicket(activeBooking.bookingId, { qrPayload, ...location })
+        toast.success('เช็คอินสำเร็จ เริ่มนับเวลาจอดแล้ว')
+        await load()
+      } catch (error) {
+        toast.error(apiErrorMessage(error, 'เช็คอินไม่สำเร็จ'))
+        if (error.response?.data?.code === 'checkin_expired') {
+          clearActiveBooking()
+          navigate('/app')
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [activeBooking, load, clearActiveBooking, navigate]
+  )
 
   // The bay's sticker was read: confirm on the same page the phone's own
   // camera app would have opened.
@@ -312,6 +348,9 @@ const ActiveBooking = () => {
   const { spot, zone, vehicle, pricing } = activeBooking
   const canGps = Boolean(activeBooking.checkInOptions?.gps)
   const canSticker = Boolean(activeBooking.checkInOptions?.spotQr)
+  const canTicket = Boolean(activeBooking.checkInOptions?.ticketScan)
+  const canScan = canSticker || canTicket
+  const scanLabel = canSticker && canTicket ? 'สแกน QR เช็คอิน' : canTicket ? 'สแกน QR บนบัตรจอด' : 'สแกน QR ที่ช่องจอด'
   const urgent = remainingMs > 0 && remainingMs <= URGENT_MS
 
   return (
@@ -359,7 +398,9 @@ const ActiveBooking = () => {
                   ? `ถึงลานแล้วกดเช็คอินด้วยตำแหน่ง (ต้องอยู่ในรัศมี ${activeBooking.checkInOptions.radiusMeters} ม.)`
                   : canSticker
                     ? 'จอดรถในช่องที่จองแล้ว สแกน QR ที่ติดอยู่ที่ช่องเพื่อเช็คอิน'
-                    : 'ลานนี้ยังไม่เปิดให้เช็คอินเอง แสดง QR บนบัตรจอดให้เจ้าหน้าที่'}
+                    : canTicket
+                      ? 'ถึงแล้วสแกน QR บนบัตรจอดเพื่อเช็คอิน'
+                      : 'ลานนี้ยังไม่เปิดให้เช็คอินเอง แสดง QR บนบัตรจอดให้เจ้าหน้าที่'}
             </p>
           </>
         ) : (
@@ -427,11 +468,18 @@ const ActiveBooking = () => {
         {isPending && (
           <div className="mt-4 pt-4 border-t border-dashed border-hairline flex items-center gap-4">
             {qrImage ? (
-              <img
-                src={qrImage}
-                alt={`QR ของการจองช่อง ${spot?.spotNumber}`}
-                className="w-28 h-28 shrink-0 rounded-md border border-hairline bg-white p-1.5"
-              />
+              <button
+                type="button"
+                onClick={() => setQrBig(true)}
+                className="shrink-0 rounded-md focus-visible:shadow-ring"
+                aria-label="ขยาย QR"
+              >
+                <img
+                  src={qrImage}
+                  alt={`QR ของการจองช่อง ${spot?.spotNumber}`}
+                  className="w-28 h-28 rounded-md border border-hairline bg-white p-1.5"
+                />
+              </button>
             ) : (
               <div className="w-28 h-28 shrink-0 skeleton rounded-md" />
             )}
@@ -441,7 +489,10 @@ const ActiveBooking = () => {
                 QR ของการจองนี้
               </p>
               <p className="mt-1">
-                ใช้แสดงกับเจ้าหน้าที่หรือจุดสแกนถ้าลานนั้นมี QR จะเปลี่ยนใหม่ทุกครั้งที่เปิดหน้านี้ ให้ใช้อันที่เห็นล่าสุด
+                {canTicket
+                  ? 'ลานนี้เปิดโหมดเดโม สแกน QR นี้เพื่อเช็คอินได้ (จากอีกจอ หรือแคปไว้แล้วเลือกรูป)'
+                  : 'ไว้แสดงให้เจ้าหน้าที่สแกน (ถ้าลานนั้นมี) ไม่ได้ใช้สแกนเช็คอินเอง'}{' '}
+                กดที่รูปเพื่อขยาย QR นี้ใช้ได้จนกว่าจะเช็คอิน แคปเก็บไว้ได้
               </p>
             </div>
           </div>
@@ -511,7 +562,7 @@ const ActiveBooking = () => {
                 ถึงลานแล้ว เช็คอินด้วยตำแหน่ง
               </Button>
             )}
-            {canSticker && (
+            {canScan && (
               <Button
                 size={canGps ? 'md' : 'lg'}
                 variant={canGps ? 'soft' : 'solid'}
@@ -521,10 +572,10 @@ const ActiveBooking = () => {
                 disabled={busy || remainingMs <= 0}
                 className={cn(!canGps && urgent && 'animate-pulse-ring')}
               >
-                สแกน QR ที่ช่องจอด
+                {scanLabel}
               </Button>
             )}
-            {!canGps && !canSticker && (
+            {!canGps && !canScan && (
               <p className="rounded-md border border-warn/30 bg-warn/6 p-3 text-small text-content-muted">
                 ลานนี้ยังไม่เปิดให้เช็คอินเอง แสดง QR บนบัตรจอดให้เจ้าหน้าที่สแกน หรือติดต่อผู้ดูแลระบบ
               </p>
@@ -550,10 +601,28 @@ const ActiveBooking = () => {
       <Modal
         open={scanOpen}
         onClose={() => setScanOpen(false)}
-        title="สแกน QR ที่ช่องจอด"
+        title={scanLabel}
         description={`ช่องที่จองไว้: ${spot?.spotNumber} · ${zone?.name}`}
       >
-        {scanOpen && <SpotScanner onSpot={goArrive} />}
+        {scanOpen && (
+          <SpotScanner
+            onSpot={goArrive}
+            allowSpot={canSticker}
+            onTicket={canTicket ? handleTicketScan : undefined}
+            spotNumber={spot?.spotNumber}
+          />
+        )}
+      </Modal>
+
+      {/* ---- Ticket QR, large ---- */}
+      <Modal open={qrBig} onClose={() => setQrBig(false)} title="QR ของการจอง" description={`ช่อง ${spot?.spotNumber} · ${zone?.name}`}>
+        {qrImage && (
+          <img
+            src={qrImage}
+            alt={`QR ของการจองช่อง ${spot?.spotNumber}`}
+            className="w-full max-w-sm mx-auto rounded-md border border-hairline bg-white p-3"
+          />
+        )}
       </Modal>
 
       {/* ---- Cancel confirmation ---- */}
