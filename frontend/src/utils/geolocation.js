@@ -27,4 +27,20 @@ export const geolocationErrorMessage = (error) => {
   return 'ระบุตำแหน่งไม่ได้ ลองใหม่อีกครั้ง หรือสแกน QR ที่ช่องจอด'
 }
 
-export default { getPosition, geolocationErrorMessage }
+/**
+ * Coordinates pasted by an admin: "13.7299, 100.7782" as Google Maps copies
+ * them (right-click a point, click the numbers), or a Maps link that has
+ * "@13.7299,100.7782" or "q=13.7299,100.7782" in it.
+ *
+ * @returns {{ latitude: number, longitude: number } | null}
+ */
+export const parseCoordinates = (text) => {
+  const match = /(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/.exec(String(text || ''))
+  if (!match) return null
+  const latitude = Number(match[1])
+  const longitude = Number(match[2])
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null
+  return { latitude, longitude }
+}
+
+export default { getPosition, geolocationErrorMessage, parseCoordinates }

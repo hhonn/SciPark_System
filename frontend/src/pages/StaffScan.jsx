@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Camera, CameraOff, CheckCircle2, XCircle, ScanLine, MapPin, LocateFixed, Keyboard, ShieldCheck } from 'lucide-react'
+import { Camera, CameraOff, CheckCircle2, XCircle, ScanLine, MapPin, LocateFixed, Keyboard, ShieldCheck, Save, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
@@ -8,7 +8,7 @@ import Badge from '../components/ui/Badge'
 import { staffAPI } from '../utils/apiService'
 import { apiErrorMessage } from '../utils/api'
 import { useAuthStore } from '../stores/authStore'
-import { getPosition, geolocationErrorMessage } from '../utils/geolocation'
+import { getPosition, geolocationErrorMessage, parseCoordinates } from '../utils/geolocation'
 import { formatTime } from '../utils/format'
 import { cn } from '../utils/cn'
 import { useQrScanner } from '../utils/useQrScanner'
@@ -78,6 +78,7 @@ const ScanResult = ({ result, onNext }) => {
 const LotLocations = () => {
   const [zones, setZones] = useState([])
   const [radius, setRadius] = useState({})
+  const [typed, setTyped] = useState({})
   const [busyId, setBusyId] = useState(null)
 
   const load = useCallback(async () => {
@@ -115,6 +116,29 @@ const LotLocations = () => {
     }
   }
 
+  // From Google Maps, so a lot can be set up without going there.
+  const saveTyped = async (zone) => {
+    const point = parseCoordinates(typed[zone.id])
+    if (!point) {
+      toast.error('อ่านพิกัดไม่ได้ ให้วางเป็นตัวเลขแบบ 13.7299, 100.7782')
+      return
+    }
+    setBusyId(zone.id)
+    try {
+      const { data } = await staffAPI.setZoneLocation(zone.id, {
+        ...point,
+        radiusMeters: Number(radius[zone.id] || zone.checkInRadiusMeters || 100),
+      })
+      toast.success(data.message)
+      setTyped((t) => ({ ...t, [zone.id]: '' }))
+      load()
+    } catch (error) {
+      toast.error(apiErrorMessage(error))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const clear = async (zone) => {
     setBusyId(zone.id)
     try {
@@ -133,8 +157,10 @@ const LotLocations = () => {
       <div>
         <h2 className="text-h2 text-content">พิกัดลานจอด (ผู้ดูแลระบบ)</h2>
         <p className="mt-1 text-small text-content-muted">
-          ไปยืนกลางลานแล้วกด &ldquo;ตั้งพิกัดจากตำแหน่งนี้&rdquo; เพื่อเปิดให้ผู้ใช้เช็คอินด้วย GPS ได้
-          ลานที่ยังไม่ตั้งพิกัดจะเช็คอินได้ด้วยการสแกนของเจ้าหน้าที่เท่านั้น
+          ตั้งพิกัดกลางลานเพื่อให้ผู้ใช้เช็คอินด้วย GPS ได้ (เหมาะกับลานโล่ง) ทำได้สองแบบ:
+          เปิด Google Maps คลิกขวาที่กลางลาน กดตัวเลขพิกัดเพื่อคัดลอก แล้ววางในช่องด้านล่าง
+          หรือไปยืนกลางลานแล้วกด &ldquo;ใช้ตำแหน่งที่ยืนอยู่&rdquo;
+          ลานที่ยังไม่ตั้งพิกัดเช็คอินได้ด้วย QR ที่ช่องจอดหรือเจ้าหน้าที่สแกนเท่านั้น
         </p>
       </div>
 
@@ -148,15 +174,41 @@ const LotLocations = () => {
             {zone.gpsCheckIn ? (
               <Badge tone="ok" dot>GPS เปิด · {zone.checkInRadiusMeters} ม.</Badge>
             ) : (
-              <Badge tone="neutral">สแกนเท่านั้น</Badge>
+              <Badge tone="neutral">ยังไม่ตั้งพิกัด</Badge>
             )}
           </div>
 
           {zone.gpsCheckIn && (
-            <p className="text-micro text-content-muted font-mono">
+            <a
+              href={`https://www.google.com/maps?q=${zone.latitude},${zone.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-micro text-brand-600 font-mono hover:underline"
+            >
               {zone.latitude.toFixed(6)}, {zone.longitude.toFixed(6)}
-            </p>
+              <ExternalLink className="w-3 h-3" />
+            </a>
           )}
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex-1 min-w-[14rem]">
+              <Input
+                label="พิกัดจาก Google Maps"
+                placeholder="13.7299, 100.7782"
+                inputMode="decimal"
+                value={typed[zone.id] ?? ''}
+                onChange={(e) => setTyped((t) => ({ ...t, [zone.id]: e.target.value }))}
+              />
+            </div>
+            <Button
+              icon={Save}
+              loading={busyId === zone.id}
+              disabled={!typed[zone.id]?.trim()}
+              onClick={() => saveTyped(zone)}
+            >
+              บันทึกพิกัด
+            </Button>
+          </div>
 
           <div className="flex flex-wrap items-end gap-2">
             <div className="w-28">
@@ -164,7 +216,7 @@ const LotLocations = () => {
                 label="รัศมี (ม.)"
                 type="number"
                 min={20}
-                max={1000}
+                max={2000}
                 value={radius[zone.id] ?? zone.checkInRadiusMeters ?? 100}
                 onChange={(e) => setRadius((r) => ({ ...r, [zone.id]: e.target.value }))}
               />
@@ -175,7 +227,7 @@ const LotLocations = () => {
               loading={busyId === zone.id}
               onClick={() => pinHere(zone)}
             >
-              ตั้งพิกัดจากตำแหน่งนี้
+              ใช้ตำแหน่งที่ยืนอยู่
             </Button>
             {zone.gpsCheckIn && (
               <Button variant="ghost" disabled={busyId === zone.id} onClick={() => clear(zone)}>

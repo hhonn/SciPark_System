@@ -313,6 +313,8 @@ const ActiveBooking = () => {
   }
 
   const { spot, zone, vehicle, pricing } = activeBooking
+  const gpsFirst = Boolean(activeBooking.checkInOptions?.gps)
+  const urgent = remainingMs > 0 && remainingMs <= URGENT_MS
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -355,7 +357,9 @@ const ActiveBooking = () => {
             >
               {remainingMs <= 0
                 ? 'หมดเวลาแล้ว ระบบกำลังยกเลิกการจอง'
-                : 'จอดรถในช่องที่จองแล้ว สแกน QR ที่ติดอยู่ที่ช่องเพื่อเช็คอิน'}
+                : gpsFirst
+                  ? `ถึงลานแล้วกดเช็คอินด้วยตำแหน่ง (ต้องอยู่ในรัศมี ${activeBooking.checkInOptions.radiusMeters} ม.)`
+                  : 'จอดรถในช่องที่จองแล้ว สแกน QR ที่ติดอยู่ที่ช่องเพื่อเช็คอิน'}
             </p>
           </>
         ) : (
@@ -467,26 +471,41 @@ const ActiveBooking = () => {
       <div className="space-y-3">
         {isPending ? (
           <>
-            <Button
-              size="lg"
-              fullWidth
-              icon={ScanLine}
-              onClick={() => setScanOpen(true)}
-              disabled={busy || remainingMs <= 0}
-              className={cn(remainingMs > 0 && remainingMs <= URGENT_MS && 'animate-pulse-ring')}
-            >
-              สแกน QR ที่ช่องจอด
-            </Button>
-            {activeBooking.checkInOptions?.gps && (
+            {/* Lots with coordinates (open-air lots) check in by GPS with
+                nothing installed on site; the bay sticker is then the backup. */}
+            {gpsFirst ? (
+              <>
+                <Button
+                  size="lg"
+                  fullWidth
+                  icon={LocateFixed}
+                  onClick={handleGpsCheckIn}
+                  loading={busy}
+                  disabled={remainingMs <= 0}
+                  className={cn(urgent && 'animate-pulse-ring')}
+                >
+                  ถึงลานแล้ว เช็คอินด้วยตำแหน่ง
+                </Button>
+                <Button
+                  variant="soft"
+                  fullWidth
+                  icon={ScanLine}
+                  onClick={() => setScanOpen(true)}
+                  disabled={busy || remainingMs <= 0}
+                >
+                  สแกน QR ที่ช่องจอด
+                </Button>
+              </>
+            ) : (
               <Button
-                variant="soft"
+                size="lg"
                 fullWidth
-                icon={LocateFixed}
-                onClick={handleGpsCheckIn}
-                loading={busy}
-                disabled={remainingMs <= 0}
+                icon={ScanLine}
+                onClick={() => setScanOpen(true)}
+                disabled={busy || remainingMs <= 0}
+                className={cn(urgent && 'animate-pulse-ring')}
               >
-                เช็คอินด้วยตำแหน่ง (GPS)
+                สแกน QR ที่ช่องจอด
               </Button>
             )}
             {/* For lots that do have an attendant. */}

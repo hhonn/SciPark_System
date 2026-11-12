@@ -73,7 +73,7 @@ const parkingZoneSchema = new mongoose.Schema({
     type: Number,
     default: 100,
     min: 20,
-    max: 1000,
+    max: 2000,
   },
 }, { timestamps: true });
 

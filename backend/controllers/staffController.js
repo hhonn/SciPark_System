@@ -154,8 +154,8 @@ export const setZoneLocation = async (req, res) => {
       if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180) {
         return res.status(400).json({ success: false, message: "พิกัดไม่ถูกต้อง" });
       }
-      if (radius !== undefined && (!Number.isFinite(radius) || radius < 20 || radius > 1000)) {
-        return res.status(400).json({ success: false, message: "รัศมีต้องอยู่ระหว่าง 20-1000 เมตร" });
+      if (radius !== undefined && (!Number.isFinite(radius) || radius < 20 || radius > 2000)) {
+        return res.status(400).json({ success: false, message: "รัศมีต้องอยู่ระหว่าง 20-2000 เมตร" });
       }
 
       update = { latitude: lat, longitude: lng };
