@@ -873,10 +873,15 @@ const run = async () => {
       userId: qrUid,
     });
 
-  await check('the app learns the booking can be checked in at the bay', async () => {
+  await check('the bay-QR button shows only once an admin says the stickers are up', async () => {
     assert.equal(qrBooked.status, 201, qrBooked.body.message);
-    const res = await call(bookingCtrl.getActiveBooking, { userId: qrUid });
-    assert.equal(res.body.data.checkInOptions.spotQr, true);
+    const before = await call(bookingCtrl.getActiveBooking, { userId: qrUid });
+    assert.equal(before.body.data.checkInOptions.spotQr, false);
+    const lotsCtrlEarly = await import('../controllers/adminLotsController.js');
+    const set = await call(lotsCtrlEarly.updateLot, { params: { id: qrZone._id.toString() }, body: { spotStickers: true } });
+    assert.equal(set.status, 200, set.body.message);
+    const after = await call(bookingCtrl.getActiveBooking, { userId: qrUid });
+    assert.equal(after.body.data.checkInOptions.spotQr, true);
   });
 
   await check('scanning another bay is caught, and cannot check in', async () => {
@@ -895,16 +900,26 @@ const run = async () => {
     assert.equal(res.body.data.booking.bookingId.toString(), qrBookingId);
   });
 
-  await check('a sticker photo used from 1 km away is refused when the phone sends a good fix', async () => {
+  await check('a sticker photo used from 1 km away is refused', async () => {
     const res = await qrCheckIn(mine, far);
     assert.equal(res.status, 403);
     assert.equal(res.body.code, 'too_far');
     assert.equal((await Booking.findById(qrBookingId)).status, 'pending');
   });
 
-  await check('scanning the booked bay checks in, with or without GPS', async () => {
-    const res = await qrCheckIn(mine);
+  await check('in a lot with coordinates, the sticker also needs GPS inside the radius', async () => {
+    const none = await qrCheckIn(mine);
+    assert.equal(none.status, 400);
+    assert.equal(none.body.code, 'location_required');
+    const rough = await qrCheckIn(mine, { ...near, accuracy: 500 });
+    assert.equal(rough.body.code, 'gps_inaccurate');
+    assert.equal((await Booking.findById(qrBookingId)).status, 'pending');
+  });
+
+  await check('scanning the booked bay from inside the lot checks in', async () => {
+    const res = await qrCheckIn(mine, near);
     assert.equal(res.status, 200, res.body.message);
+    assert.ok((await Booking.findById(qrBookingId)).checkInLocation.distanceMeters < 100);
     const booking = await Booking.findById(qrBookingId);
     assert.equal(booking.status, 'confirmed');
     assert.equal(booking.checkInMethod, 'spot_qr');

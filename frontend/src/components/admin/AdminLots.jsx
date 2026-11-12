@@ -66,6 +66,45 @@ const AddLotForm = ({ onAdded }) => {
   )
 }
 
+/** Drivers are offered "scan the QR at your bay" only once this is on. */
+const StickerSwitch = ({ lot, onChanged }) => {
+  const [busy, setBusy] = useState(false)
+
+  const toggle = async () => {
+    setBusy(true)
+    try {
+      const { data } = await adminAPI.updateLot(lot.id, { spotStickers: !lot.spotStickers })
+      toast.success(data.message)
+      onChanged()
+    } catch (error) {
+      toast.error(apiErrorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <label className="flex items-start gap-3 rounded-md border border-hairline p-3 cursor-pointer">
+      <input
+        type="checkbox"
+        className="mt-1 w-4 h-4 accent-brand-500"
+        checked={Boolean(lot.spotStickers)}
+        disabled={busy}
+        onChange={toggle}
+      />
+      <span className="text-small">
+        <span className="block font-medium text-content">ติดสติกเกอร์ QR ที่ช่องจอดของลานนี้แล้ว</span>
+        <span className="block text-content-muted">
+          เปิดแล้วผู้ใช้จะเห็นปุ่ม &ldquo;สแกน QR ที่ช่องจอด&rdquo;
+          {lot.gpsCheckIn
+            ? ' ลานนี้ตั้งพิกัดไว้ ตอนสแกนจึงต้องเปิด GPS และอยู่ในรัศมีด้วย'
+            : ' ลานนี้ไม่มีพิกัด สแกนสติกเกอร์อย่างเดียวก็เช็คอินได้ (เหมาะกับในอาคารที่ GPS ไม่แม่น)'}
+        </span>
+      </span>
+    </label>
+  )
+}
+
 const LotSpots = ({ lot, onChanged }) => {
   const [spots, setSpots] = useState([])
   const [loading, setLoading] = useState(true)
@@ -140,6 +179,8 @@ const LotSpots = ({ lot, onChanged }) => {
           ))}
         </div>
       </div>
+
+      <StickerSwitch lot={lot} onChanged={onChanged} />
 
       <p className="text-small text-content-muted">
         กดที่ช่องว่างเพื่อปิดใช้งาน (เช่น ซ่อมพื้น หรือกันไว้สำหรับงาน) ช่องที่ปิดจะไม่ถูกจองและไม่นับในจำนวนช่องที่ผู้ใช้เห็น

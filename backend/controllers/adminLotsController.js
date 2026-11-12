@@ -21,6 +21,7 @@ const shapeLot = (zone, counts = {}) => ({
   longitude: zone.longitude,
   checkInRadiusMeters: zone.checkInRadiusMeters,
   gpsCheckIn: Number.isFinite(zone.latitude) && Number.isFinite(zone.longitude),
+  spotStickers: Boolean(zone.spotStickers),
   spots: {
     total: counts.total || 0,
     available: counts.available || 0,
@@ -266,4 +267,42 @@ export const setSpotClosed = async (req, res) => {
   }
 };
 
-export default { listLots, createLot, listLotSpots, addLotSpots, setSpotClosed, parseSpotNumbers };
+/*
+    @desc   Change a lot's settings
+    @route  PUT /api/admin/lots/:id
+    @access Admin
+    @body   { spotStickers?: boolean, name?: string, building?: string }
+*/
+export const updateLot = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) throw new HttpError(404, "ไม่พบลาน");
+    const update = {};
+    if (req.body?.spotStickers !== undefined) {
+      if (typeof req.body.spotStickers !== "boolean") throw new HttpError(400, "spotStickers ต้องเป็น true หรือ false");
+      update.spotStickers = req.body.spotStickers;
+    }
+    if (req.body?.name !== undefined) {
+      const name = String(req.body.name).trim();
+      if (!name || name.length > 80) throw new HttpError(400, "ชื่อลานต้องมี 1-80 ตัวอักษร");
+      update.name = name;
+    }
+    if (req.body?.building !== undefined) update.building = String(req.body.building).trim().slice(0, 80);
+    if (!Object.keys(update).length) throw new HttpError(400, "ไม่มีอะไรให้แก้");
+
+    const zone = await ParkingZone.findByIdAndUpdate(id, update, { new: true });
+    if (!zone) throw new HttpError(404, "ไม่พบลาน");
+
+    const message =
+      update.spotStickers === true
+        ? `ลาน ${zone.zoneName}: ผู้ใช้จะเห็นปุ่มสแกน QR ที่ช่องจอด`
+        : update.spotStickers === false
+          ? `ลาน ${zone.zoneName}: ซ่อนปุ่มสแกน QR ที่ช่องจอดแล้ว`
+          : `บันทึกลาน ${zone.zoneName} แล้ว`;
+    res.json({ success: true, message, lot: shapeLot(zone) });
+  } catch (error) {
+    sendError(res, error, "บันทึกลานไม่สำเร็จ", "Admin update lot error");
+  }
+};
+
+export default { updateLot, listLots, createLot, listLotSpots, addLotSpots, setSpotClosed, parseSpotNumbers };

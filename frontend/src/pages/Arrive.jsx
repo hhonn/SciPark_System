@@ -6,7 +6,7 @@ import Button from '../components/ui/Button'
 import { PageLoader } from '../components/ui/Loading'
 import { bookingAPI } from '../utils/apiService'
 import { apiErrorMessage } from '../utils/api'
-import { getPosition } from '../utils/geolocation'
+import { getPosition, geolocationErrorMessage } from '../utils/geolocation'
 import { formatTHB, formatTime } from '../utils/format'
 import { cn } from '../utils/cn'
 
@@ -85,16 +85,18 @@ const Arrive = () => {
     const { data } = result
     setBusy(true)
 
-    // Optional: the sticker is the proof. A quick fix, where the lot has
-    // coordinates, only catches a sticker photo used from far away. A denied
-    // or slow GPS does not block the check-in.
+    // Where the lot has coordinates the server also needs the phone inside
+    // it (so a photo of the sticker is no use from elsewhere). Lots without
+    // coordinates go on the sticker alone.
     let location = {}
     if (data.gpsCheck) {
       try {
-        const { coords } = await getPosition({ timeout: 6000 })
+        const { coords } = await getPosition()
         location = { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy }
-      } catch {
-        location = {}
+      } catch (error) {
+        toast.error(geolocationErrorMessage(error))
+        setBusy(false)
+        return
       }
     }
 

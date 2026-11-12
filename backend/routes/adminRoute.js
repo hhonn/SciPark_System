@@ -9,7 +9,7 @@ import {
   rotateSpotCheckInCode,
 } from "../controllers/adminController.js";
 import { getDashboard } from "../controllers/adminDashboardController.js";
-import { listLots, createLot, listLotSpots, addLotSpots, setSpotClosed } from "../controllers/adminLotsController.js";
+import { listLots, createLot, updateLot, listLotSpots, addLotSpots, setSpotClosed } from "../controllers/adminLotsController.js";
 import { authenticateUser, requireAdmin } from "../middleware/userAuth.js";
 
 const router = express.Router();
@@ -28,6 +28,7 @@ router.post("/spots/:id/rotate-code", rotateSpotCheckInCode);
 // Lots and bays.
 router.get("/lots", listLots);
 router.post("/lots", createLot);
+router.put("/lots/:id", updateLot);
 router.get("/lots/:id/spots", listLotSpots);
 router.post("/lots/:id/spots", addLotSpots);
 router.put("/spots/:id/closed", setSpotClosed);

@@ -43,6 +43,7 @@ export const adminAPI = {
   getLotSpots: (lotId) => api.get(`/admin/lots/${lotId}/spots`),
   addLotSpots: (lotId, { spots, floor }) => api.post(`/admin/lots/${lotId}/spots`, { spots, floor }),
   setSpotClosed: (spotId, closed) => api.put(`/admin/spots/${spotId}/closed`, { closed }),
+  updateLot: (lotId, changes) => api.put(`/admin/lots/${lotId}`, changes),
 }
 
 export const pricingAPI = {

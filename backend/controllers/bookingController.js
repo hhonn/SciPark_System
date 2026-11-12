@@ -283,7 +283,7 @@ export const getActiveBooking = async (req, res) => {
       .populate({
         path: "spot",
         select: "spotNumber name floor building pricePerHour facilities",
-        populate: { path: "zone", select: "zoneName name building latitude longitude checkInRadiusMeters" },
+        populate: { path: "zone", select: "zoneName name building latitude longitude checkInRadiusMeters spotStickers" },
       })
       .populate("vehicle", "licensePlate brand model");
 
@@ -357,7 +357,7 @@ export const getActiveBooking = async (req, res) => {
         // How this booking can be checked in. Scanning the bay's sticker and a
         // staff scan always work; GPS only where the lot has coordinates.
         checkInOptions: {
-          spotQr: true,
+          spotQr: Boolean(booking.spot?.zone?.spotStickers),
           staffScan: true,
           gps: zoneHasLocation(booking.spot?.zone),
           radiusMeters: booking.spot?.zone?.checkInRadiusMeters || 100,
@@ -464,11 +464,47 @@ const parseLocation = (body = {}) => {
 };
 
 /**
- * How far from a lot a bay-QR check-in may claim to be, when the phone did
- * send a decent GPS fix. Generous on purpose: indoor and multi-storey lots
- * read badly. It only catches a sticker photo being used from somewhere else.
+ * Is the phone inside this lot? Shared by GPS check-in and bay-QR check-in
+ * (where the lot has coordinates, scanning the sticker also needs a fix
+ * inside the radius, so a photo of a sticker is no use from elsewhere).
+ *
+ * @returns {{ location } | { status, body }}
  */
-const SPOT_QR_MAX_DISTANCE_METERS = 500;
+const checkInLot = (body, zone, { hint }) => {
+  const position = parseLocation(body);
+  if (!position) {
+    return {
+      status: 400,
+      body: { success: false, code: "location_required", message: "ต้องเปิดตำแหน่ง (GPS) เพื่อเช็คอิน" },
+    };
+  }
+  if (position.accuracy > MAX_GPS_ACCURACY_METERS) {
+    return {
+      status: 400,
+      body: {
+        success: false,
+        code: "gps_inaccurate",
+        message: `สัญญาณ GPS ไม่แม่นพอ (คลาดเคลื่อน ~${Math.round(position.accuracy)} ม.) ${hint}`,
+        accuracy: Math.round(position.accuracy),
+      },
+    };
+  }
+  const distance = Math.round(distanceMeters(position, zone));
+  const radius = zone.checkInRadiusMeters || 100;
+  if (distance > radius) {
+    return {
+      status: 403,
+      body: {
+        success: false,
+        code: "too_far",
+        message: `คุณอยู่ห่างจากลาน ${zone.zoneName} ประมาณ ${distance} ม. ต้องอยู่ภายใน ${radius} ม. จึงจะเช็คอินได้`,
+        distanceMeters: distance,
+        radiusMeters: radius,
+      },
+    };
+  }
+  return { location: { ...position, distanceMeters: distance } };
+};
 
 /** The 200 answer shared by every self check-in path. */
 const checkInSucceeded = (res, booking, confirmed, method, extra = {}) => {
@@ -519,25 +555,14 @@ const checkInBySpotQr = async (req, res, booking) => {
     });
   }
 
-  // GPS is optional here: the sticker is the proof. A fix that is good and
-  // clearly somewhere else means the sticker was photographed and sent on.
+  // Lots with coordinates also need the phone to be in the lot. Lots without
+  // them rely on the sticker alone (a fix is kept if the phone sent one).
   const zone = spot.zone;
-  const position = parseLocation(req.body);
-  let location = null;
-  if (position && zoneHasLocation(zone)) {
-    const distance = Math.round(distanceMeters(position, zone));
-    location = { ...position, distanceMeters: distance };
-    const limit = Math.max((zone.checkInRadiusMeters || 100) * 3, SPOT_QR_MAX_DISTANCE_METERS);
-    if (position.accuracy <= MAX_GPS_ACCURACY_METERS && distance > limit) {
-      return res.status(403).json({
-        success: false,
-        code: "too_far",
-        message: `ตำแหน่งของคุณอยู่ห่างจากลาน ${zone.zoneName} ประมาณ ${distance} ม. ต้องสแกน QR ที่ช่องจอดจริง`,
-        distanceMeters: distance,
-      });
-    }
-  } else if (position) {
-    location = position;
+  let location = parseLocation(req.body);
+  if (zoneHasLocation(zone)) {
+    const inLot = checkInLot(req.body, zone, { hint: "ลองออกที่โล่งแล้วสแกนใหม่" });
+    if (!inLot.location) return res.status(inLot.status).json(inLot.body);
+    location = inLot.location;
   }
 
   const confirmed = await confirmCheckIn({ bookingId: booking._id, method: "spot_qr", location });
@@ -552,49 +577,18 @@ const checkInByGps = async (req, res, booking) => {
     return res.status(403).json({
       success: false,
       code: "self_checkin_unavailable",
-      message: "ลานนี้ยังไม่เปิดให้เช็คอินด้วยตำแหน่ง กรุณาสแกน QR ที่ช่องจอด",
+      message: "ลานนี้ยังไม่เปิดให้เช็คอินด้วยตำแหน่ง",
     });
   }
 
-  const position = parseLocation(req.body);
-  if (!position) {
-    return res.status(400).json({
-      success: false,
-      code: "location_required",
-      message: "ต้องเปิดตำแหน่ง (GPS) เพื่อเช็คอินด้วยตนเอง",
-    });
-  }
+  const inLot = checkInLot(req.body, zone, { hint: "ลองออกที่โล่งแล้วลองใหม่" });
+  if (!inLot.location) return res.status(inLot.status).json(inLot.body);
+  const distance = inLot.location.distanceMeters;
 
-  if (position.accuracy > MAX_GPS_ACCURACY_METERS) {
-    return res.status(400).json({
-      success: false,
-      code: "gps_inaccurate",
-      message: `สัญญาณ GPS ไม่แม่นพอ (คลาดเคลื่อน ~${Math.round(position.accuracy)} ม.) ลองออกที่โล่งแล้วลองใหม่ หรือสแกน QR ที่ช่องจอด`,
-      accuracy: Math.round(position.accuracy),
-    });
-  }
+  const confirmed = await confirmCheckIn({ bookingId: booking._id, method: "gps", location: inLot.location });
 
-  const distance = distanceMeters(position, zone);
-  const radius = zone.checkInRadiusMeters || 100;
-
-  if (distance > radius) {
-    return res.status(403).json({
-      success: false,
-      code: "too_far",
-      message: `คุณอยู่ห่างจากลาน ${zone.zoneName} ประมาณ ${Math.round(distance)} ม. ต้องอยู่ภายใน ${radius} ม. จึงจะเช็คอินได้`,
-      distanceMeters: Math.round(distance),
-      radiusMeters: radius,
-    });
-  }
-
-  const confirmed = await confirmCheckIn({
-    bookingId: booking._id,
-    method: "gps",
-    location: { ...position, distanceMeters: Math.round(distance) },
-  });
-
-  logEvent("checkin", { method: "gps", distanceMeters: Math.round(distance) });
-  return checkInSucceeded(res, booking, confirmed, "gps", { distanceMeters: Math.round(distance) });
+  logEvent("checkin", { method: "gps", distanceMeters: distance });
+  return checkInSucceeded(res, booking, confirmed, "gps", { distanceMeters: distance });
 };
 
 /*

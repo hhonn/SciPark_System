@@ -75,6 +75,12 @@ const parkingZoneSchema = new mongoose.Schema({
     min: 20,
     max: 2000,
   },
+  // QR stickers have been put up on this lot's bays, so drivers are offered
+  // "scan the QR at your bay". Set by an admin once the stickers are up.
+  spotStickers: {
+    type: Boolean,
+    default: false,
+  },
 }, { timestamps: true });
 
 // Index already created by unique: true on zoneName field
