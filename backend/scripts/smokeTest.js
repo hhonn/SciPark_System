@@ -101,10 +101,17 @@ const run = async () => {
 
   console.log('\nPricing (config/pricing.js)');
 
+  // A session of exactly `hours`. Reading the clock twice (start from
+  // Date.now(), end from new Date()) let a slow machine slip in a millisecond,
+  // and per-started-hour billing turned 5h + 1ms into a sixth hour.
+  const session = (hours) => {
+    const endedAt = new Date();
+    return { startedAt: new Date(endedAt.getTime() - hours * 3600 * 1000), endedAt };
+  };
+
   await check('overtime bills per started hour after the free allowance', () => {
     const bill = pricing.calculateSessionCost({
-      startedAt: new Date(Date.now() - 4.2 * 3600 * 1000),
-      endedAt: new Date(),
+      ...session(4.2),
       user: { rank: 'Iron' },
     });
     // 4.2h - 3h free = 1.2h -> 2 started hours -> 20 THB
@@ -117,8 +124,7 @@ const run = async () => {
     const lapsed = { rank: 'Predator', subscriptionExpiry: new Date(Date.now() - 1000) };
     assert.equal(pricing.getEffectiveTier(lapsed).id, 'iron');
     const bill = pricing.calculateSessionCost({
-      startedAt: new Date(Date.now() - 5 * 3600 * 1000),
-      endedAt: new Date(),
+      ...session(5),
       user: lapsed,
     });
     assert.equal(bill.discountPercent, 0);
@@ -126,8 +132,7 @@ const run = async () => {
 
   await check('a live Predator gets exactly 15% off overtime', () => {
     const bill = pricing.calculateSessionCost({
-      startedAt: new Date(Date.now() - 5 * 3600 * 1000),
-      endedAt: new Date(),
+      ...session(5),
       user: { rank: 'Predator', subscriptionExpiry: new Date(Date.now() + 86400000) },
     });
     assert.equal(bill.grossOvertime, 20);
