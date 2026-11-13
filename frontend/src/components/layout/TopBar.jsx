@@ -59,7 +59,7 @@ const TopBar = () => {
       <div className="app-gutter h-full flex items-center justify-between gap-4">
         <Link to="/app" className="flex items-center gap-2.5 rounded-md" aria-label="SciPark หน้าหลัก">
           <Logo className="w-9 h-9" />
-          <span className="text-h3 font-semibold tracking-tight hidden sm:block">SciPark - BY HONN</span>
+          <span className="text-h3 font-semibold tracking-tight hidden sm:block">SciPark</span>
         </Link>
 
         <div className="flex items-center gap-1">
