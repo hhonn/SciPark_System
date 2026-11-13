@@ -12,10 +12,12 @@ STACK=${STACK:-scipark-prod}
 REGION=${AWS_REGION:-ap-southeast-2}
 EMAIL=${1:?usage: deploy-stack.sh <alert-email>}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
+. "$HERE/scripts/ami-pins.sh"
 
 if aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" >/dev/null 2>&1; then
   echo "Updating $STACK (unchanged parameters keep their current values)"
-  EXTRA=()
+  # The instances stay on the AMIs they run (see ami-pins.sh).
+  read -r -a EXTRA <<< "$(ami_pins "$STACK" "$REGION")"
 else
   echo "Creating $STACK in $REGION"
   # Lets only CloudFront reach the load balancer.

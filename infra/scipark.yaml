@@ -90,9 +90,17 @@ Parameters:
   NatAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  # The two above resolve to the newest AMI on every update, which would replace
+  # the DB and NAT. The scripts pin what the instances already run.
+  AppAmiPin: { Type: String, Default: "" }
+  DbAmiPin: { Type: String, Default: "" }
+  NatAmiPin: { Type: String, Default: "" }
 
 Conditions:
   RestrictAlbToCloudFront: !Not [!Equals [!Ref CloudFrontPrefixListId, ""]]
+  PinAppAmi: !Not [!Equals [!Ref AppAmiPin, ""]]
+  PinDbAmi: !Not [!Equals [!Ref DbAmiPin, ""]]
+  PinNatAmi: !Not [!Equals [!Ref NatAmiPin, ""]]
   SesSenderGiven: !Not [!Equals [!Ref SesSenderEmail, ""]]
 
 # =============================================================================
@@ -264,7 +272,7 @@ Resources:
   NatInstance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref NatAmiId
+      ImageId: !If [PinNatAmi, !Ref NatAmiPin, !Ref NatAmiId]
       InstanceType: !Ref NatInstanceType
       SubnetId: !Ref PublicSubnetA
       SourceDestCheck: false
@@ -426,7 +434,7 @@ Resources:
     CreationPolicy:
       ResourceSignal: { Count: 1, Timeout: PT25M }
     Properties:
-      ImageId: !Ref AppAmiId
+      ImageId: !If [PinDbAmi, !Ref DbAmiPin, !Ref AppAmiId]
       InstanceType: !Ref DbInstanceType
       SubnetId: !Ref DbSubnetA
       PrivateIpAddress: !Ref DbPrivateIp
@@ -631,7 +639,7 @@ Resources:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateData:
-        ImageId: !Ref AppAmiId
+        ImageId: !If [PinAppAmi, !Ref AppAmiPin, !Ref AppAmiId]
         InstanceType: !Ref AppInstanceType
         IamInstanceProfile: { Arn: !GetAtt AppInstanceProfile.Arn }
         SecurityGroupIds: [!Ref AppSecurityGroup]
