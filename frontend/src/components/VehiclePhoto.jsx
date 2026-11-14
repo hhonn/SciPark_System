@@ -5,11 +5,9 @@ import { uploadVehiclePhoto } from '../utils/upload'
 import { apiErrorMessage } from '../utils/api'
 import { cn } from '../utils/cn'
 
-/**
- * The car's thumbnail. Tapping it picks a new photo, which goes to S3; staff
- * see it when they scan the driver's QR. Without S3 configured it is a plain
- * icon, as before.
- */
+// The car's thumbnail. Tapping it picks a new photo, which goes to S3; staff
+// see it when they scan the driver's QR. Without S3 configured it is a plain
+// icon, as before.
 const VehiclePhoto = ({ vehicle, enabled, onUploaded }) => {
   const input = useRef(null)
   const [busy, setBusy] = useState(false)

@@ -24,16 +24,14 @@ import { parkingAPI } from '../utils/apiService'
 import { availabilityTone } from '../utils/format'
 import { cn } from '../utils/cn'
 
-/**
- * Marketing surface.
- *
- * Built on what the reference parking products actually do: SpotHero and
- * JustPark put the product itself in the hero rather than a stock photo, then
- * back it with hard numbers. So this hero shows the real, live availability of
- * the five lots — the same data the app runs on — instead of describing it.
- *
- * This is also the one screen where motion may perform (see DESIGN.md).
- */
+// Marketing surface.
+//
+// Built on what the reference parking products actually do: SpotHero and
+// JustPark put the product itself in the hero rather than a stock photo, then
+// back it with hard numbers. So this hero shows the real, live availability of
+// the five lots (the same data the app runs on) instead of describing it.
+//
+// This is also the one screen where motion may perform (see DESIGN.md).
 
 const THEME_ICON = { light: Sun, dark: Moon, system: Monitor }
 
@@ -81,7 +79,7 @@ const Landing = () => {
         if (!cancelled) setZones(data.zones || [])
       })
       .catch(() => {
-        /* the hero degrades to its static copy if this fails */
+        // the hero degrades to its static copy if this fails
       })
       .finally(() => !cancelled && setLoaded(true))
     return () => {
@@ -218,7 +216,7 @@ const Landing = () => {
             </dl>
           </motion.div>
 
-          {/* Live map — the product, in the hero */}
+          {/* Live map: the product itself, in the hero */}
           <motion.div
             initial={reduce ? false : { opacity: 0, scale: 0.97, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}

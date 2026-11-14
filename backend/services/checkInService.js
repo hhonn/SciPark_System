@@ -3,23 +3,21 @@ import Booking from "../models/bookingModel.js";
 import ParkingSpot from "../models/parkingSpotModel.js";
 import { HttpError } from "../utils/httpError.js";
 
-/**
- * Booking state changes at the check-in boundary.
- *
- * Every transition here is a conditional update on `status: "pending"`. The
- * old code read the booking, changed it in memory and saved it back, so a
- * check-in and the auto-cancel sweep running in the same instant could both
- * "win": the booking ended up cancelled while the spot was marked occupied,
- * or confirmed while the spot had been handed to someone else.
- */
+// Booking state changes at the check-in boundary.
+//
+// Every transition here is a conditional update on `status: "pending"`. The
+// old code read the booking, changed it in memory and saved it back, so a
+// check-in and the auto-cancel sweep running in the same instant could both
+// "win": the booking ended up cancelled while the spot was marked occupied,
+// or confirmed while the spot had been handed to someone else.
 
-/** GPS readings worse than this cannot place a phone in a particular lot. */
+// GPS readings worse than this cannot place a phone in a particular lot.
 export const MAX_GPS_ACCURACY_METERS = 100;
 
 const EARTH_RADIUS_METERS = 6371000;
 const toRadians = (deg) => (deg * Math.PI) / 180;
 
-/** Great-circle distance between two { latitude, longitude } points, in metres. */
+// Great-circle distance between two { latitude, longitude } points, in metres.
 export const distanceMeters = (a, b) => {
   const dLat = toRadians(b.latitude - a.latitude);
   const dLng = toRadians(b.longitude - a.longitude);
@@ -29,16 +27,14 @@ export const distanceMeters = (a, b) => {
   return 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(h));
 };
 
-/** Has this lot been given real coordinates (so GPS check-in can work)? */
+// Has this lot been given real coordinates (so GPS check-in can work)?
 export const zoneHasLocation = (zone) =>
   Number.isFinite(zone?.latitude) && Number.isFinite(zone?.longitude);
 
-/**
- * Cancel a pending booking whose check-in window has closed.
- *
- * @returns the cancelled booking, or null if it was no longer pending (someone
- *          else — a check-in or another sweep — got there first).
- */
+// Cancel a pending booking whose check-in window has closed.
+//
+// @returns the cancelled booking, or null if it was no longer pending (someone
+//          else, a check-in or another sweep, got there first).
 export const expirePendingBooking = async (bookingId, now = new Date()) => {
   const booking = await Booking.findOneAndUpdate(
     { _id: bookingId, status: "pending" },
@@ -61,17 +57,15 @@ export const expirePendingBooking = async (bookingId, now = new Date()) => {
   return booking;
 };
 
-/**
- * Mark a pending booking as arrived and its spot as occupied, atomically.
- *
- * @param {object} args
- * @param {string} args.bookingId
- * @param {"staff_scan"|"gps"|"spot_qr"} args.method
- * @param {string} [args.staffId]   who scanned, for staff_scan
- * @param {object} [args.location]  { latitude, longitude, accuracy, distanceMeters }, for gps
- *                                  (and spot_qr when the phone sent a fix)
- * @throws {HttpError} 409 when the booking stopped being pending meanwhile
- */
+// Mark a pending booking as arrived and its spot as occupied, atomically.
+//
+// @param {object} args
+// @param {string} args.bookingId
+// @param {"staff_scan"|"gps"|"spot_qr"} args.method
+// @param {string} [args.staffId]   who scanned, for staff_scan
+// @param {object} [args.location]  { latitude, longitude, accuracy, distanceMeters }, for gps
+//                                  (and spot_qr when the phone sent a fix)
+// @throws {HttpError} 409 when the booking stopped being pending meanwhile
 export const confirmCheckIn = async ({ bookingId, method, staffId = null, location = null }) => {
   const session = await mongoose.startSession();
   let booking;

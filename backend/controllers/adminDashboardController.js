@@ -3,35 +3,31 @@ import ParkingSpot from "../models/parkingSpotModel.js";
 import ParkingZone from "../models/parkingZoneModel.js";
 import { sendError } from "../utils/httpError.js";
 
-/**
- * The operator's overview: how full each lot is now, what today looked like,
- * money over the last week, when people book, and what needs a human.
- *
- * Everything is derived from bookings and spots; nothing extra is recorded.
- * Days are Bangkok days (UTC+7, no daylight saving).
- */
+// The operator's overview: how full each lot is now, what today looked like,
+// money over the last week, when people book, and what needs a human.
+//
+// Everything is derived from bookings and spots; nothing extra is recorded.
+// Days are Bangkok days (UTC+7, no daylight saving).
 
 const TZ = "+07:00";
 const TZ_MS = 7 * 3600 * 1000;
 const DAY_MS = 24 * 3600 * 1000;
 const DAYS = 7;
-/** A car checked in this long ago has almost certainly left without checking out. */
+// A car checked in this long ago has almost certainly left without checking out.
 export const LONG_PARK_HOURS = 12;
 
-/** Midnight (Bangkok) at the start of the day `now` falls in, as a UTC Date. */
+// Midnight (Bangkok) at the start of the day `now` falls in, as a UTC Date.
 export const bangkokDayStart = (now = new Date()) =>
   new Date(Math.floor((now.getTime() + TZ_MS) / DAY_MS) * DAY_MS - TZ_MS);
 
-/** "YYYY-MM-DD" of a Bangkok day. */
+// "YYYY-MM-DD" of a Bangkok day.
 const bangkokDate = (date) => new Date(date.getTime() + TZ_MS).toISOString().slice(0, 10);
 
 const SPOT_STATUSES = ["available", "reserved", "occupied", "closed"];
 
-/*
-    @desc   Numbers for the admin dashboard
-    @route  GET /api/admin/dashboard
-    @access Admin
-*/
+// @desc   Numbers for the admin dashboard
+// @route  GET /api/admin/dashboard
+// @access Admin
 export const getDashboard = async (req, res) => {
   try {
     const now = new Date();

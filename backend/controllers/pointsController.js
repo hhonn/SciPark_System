@@ -5,11 +5,9 @@ import { redeemReward } from "../services/pointsService.js";
 import { sendError } from "../utils/httpError.js";
 import { logEvent } from "../utils/logger.js";
 
-/*
-    @desc   Balance, how points are earned, what they buy, recent history
-    @route  GET /api/points
-    @access Private
-*/
+// @desc   Balance, how points are earned, what they buy, recent history
+// @route  GET /api/points
+// @access Private
 export const getPoints = async (req, res) => {
   try {
     const user = await User.findById(req.userId).select("points freeBookingCredits pointsActivityAt rank subscriptionExpiry");
@@ -48,11 +46,9 @@ export const getPoints = async (req, res) => {
   }
 };
 
-/*
-    @desc   Spend points on a reward
-    @route  POST /api/points/redeem   { rewardId }
-    @access Private
-*/
+// @desc   Spend points on a reward
+// @route  POST /api/points/redeem   { rewardId }
+// @access Private
 export const redeem = async (req, res) => {
   try {
     const result = await redeemReward({ userId: req.userId, rewardId: String(req.body?.rewardId || "") });

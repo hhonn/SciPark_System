@@ -1,9 +1,7 @@
 import { cn } from '../../utils/cn'
 
-/**
- * Shown when a list is legitimately empty. Always offers the next action —
- * an empty screen with no way forward is a dead end.
- */
+// Shown when a list is legitimately empty. Always offers the next action:
+// an empty screen with no way forward is a dead end.
 const EmptyState = ({ icon: Icon, title, description, action, className }) => (
   <div className={cn('flex flex-col items-center text-center py-12 px-6', className)}>
     {Icon && (

@@ -1,13 +1,11 @@
-/**
- * Grant or revoke the parking-staff role.
- *
- *   npm run set-role -- staff   someone@kmitl.ac.th   # may scan QR codes at the lot
- *   npm run set-role -- unstaff someone@kmitl.ac.th
- *   npm run set-role -- list                          # who has staff/admin rights
- *
- * The account must already exist (register it in the app first). Admins can
- * scan without the staff role.
- */
+// Grant or revoke the parking-staff role.
+//
+//   npm run set-role -- staff   someone@kmitl.ac.th   # may scan QR codes at the lot
+//   npm run set-role -- unstaff someone@kmitl.ac.th
+//   npm run set-role -- list                          # who has staff/admin rights
+//
+// The account must already exist (register it in the app first). Admins can
+// scan without the staff role.
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import User from "../models/userModel.js";

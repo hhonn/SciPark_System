@@ -1,13 +1,11 @@
 import mongoose from "mongoose";
 import Notification from "../models/notificationModel.js";
 
-/**
- * Clamp a pagination parameter.
- *
- * `parseInt("abc")` is NaN, and a NaN `limit` is silently ignored by Mongoose:
- * `?limit=abc` returned the user's entire notification history in one response
- * and reported `limit: null, pages: null` back to the client.
- */
+// Clamp a pagination parameter.
+//
+// `parseInt("abc")` is NaN, and a NaN `limit` is silently ignored by Mongoose:
+// `?limit=abc` returned the user's entire notification history in one response
+// and reported `limit: null, pages: null` back to the client.
 const clamp = (value, fallback, max) => {
   const parsed = parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;

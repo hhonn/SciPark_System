@@ -3,8 +3,8 @@ import { useAuthStore } from '../stores/authStore'
 
 // Production builds are served by the backend itself, so the API is same-origin
 // at /api. Only the Vite dev server (its own port) needs the absolute URL.
-// Previously a production build without VITE_API_URL called localhost:3000 —
-// i.e. the visitor's own machine — and every request failed once deployed.
+// Previously a production build without VITE_API_URL called localhost:3000
+// (the visitor's own machine), and every request failed once deployed.
 const API_URL = import.meta.env.VITE_API_URL
   || (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api')
 
@@ -24,7 +24,7 @@ api.interceptors.response.use(
     const status = error.response?.status
     const url = error.config?.url || ''
 
-    // A 401 on the auth endpoints themselves is just "wrong password" — the old
+    // A 401 on the auth endpoints themselves is just "wrong password". The old
     // interceptor logged the user out and hard-reloaded on those too, which
     // wiped the form they were typing in.
     const isAuthAttempt = url.includes('/auth/login') || url.includes('/auth/register')
@@ -43,7 +43,7 @@ api.interceptors.response.use(
   }
 )
 
-/** Pull a human-readable message out of any axios failure. */
+// Pull a human-readable message out of any axios failure.
 export const apiErrorMessage = (error, fallback = 'เกิดข้อผิดพลาด กรุณาลองใหม่') => {
   if (error?.code === 'ECONNABORTED') return 'การเชื่อมต่อใช้เวลานานเกินไป กรุณาลองใหม่'
   if (!error?.response) return 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ต'

@@ -1,14 +1,12 @@
 import { useMemo } from 'react'
 import { cn } from '../utils/cn'
 
-/**
- * The lot, drawn as a lot.
- *
- * Spots come back named by row and bay ("A01"), so they are grouped back into
- * their rows and drawn as facing banks with a driving lane between them. A flat
- * grid of squares tells a driver nothing; a plan they recognise from the tarmac
- * does — and it makes "your bay is A01" mean something before they arrive.
- */
+// The lot, drawn as a lot.
+//
+// Spots come back named by row and bay ("A01"), so they are grouped back into
+// their rows and drawn as facing banks with a driving lane between them. A flat
+// grid of squares tells a driver nothing; a plan they recognise from the tarmac
+// does, and it makes "your bay is A01" mean something before they arrive.
 
 const STATUS = {
   available: {

@@ -1,12 +1,10 @@
 import mongoose from "mongoose";
 
-/**
- * One row per change to a user's points: the ledger behind `user.points`.
- *
- * Points used to be a bare counter that several code paths incremented, with
- * no record of why. A balance nobody can explain cannot be disputed, audited
- * or corrected; this can.
- */
+// One row per change to a user's points: the ledger behind `user.points`.
+//
+// Points used to be a bare counter that several code paths incremented, with
+// no record of why. A balance nobody can explain cannot be disputed, audited
+// or corrected; this can.
 const pointTransactionSchema = new mongoose.Schema(
   {
     user: {
@@ -14,12 +12,12 @@ const pointTransactionSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    /** Positive when earned, negative when spent or expired. */
+    // Positive when earned, negative when spent or expired.
     delta: {
       type: Number,
       required: true,
     },
-    /** The balance right after this change. */
+    // The balance right after this change.
     balanceAfter: {
       type: Number,
       required: true,

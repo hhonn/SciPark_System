@@ -12,33 +12,29 @@ import { logEvent } from "../utils/logger.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/**
- * Usernames may not contain "@".
- *
- * Login accepts an email or a username in the same field. A username was free
- * text, so someone could register the username "VICTIM@MAIL.COM"; logging in
- * as victim@mail.com then matched the attacker's account (usernames were
- * compared case-insensitively, the duplicate check case-sensitively), and the
- * real owner was locked out of their own account. With "@" banned, a username
- * can never be mistaken for an address.
- */
+// Usernames may not contain "@".
+//
+// Login accepts an email or a username in the same field. A username was free
+// text, so someone could register the username "VICTIM@MAIL.COM"; logging in
+// as victim@mail.com then matched the attacker's account (usernames were
+// compared case-insensitively, the duplicate check case-sensitively), and the
+// real owner was locked out of their own account. With "@" banned, a username
+// can never be mistaken for an address.
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,30}$/;
 
-/** Wrong guesses allowed against one OTP before it is thrown away. */
+// Wrong guesses allowed against one OTP before it is thrown away.
 const MAX_OTP_ATTEMPTS = 5;
 
-/**
- * Credentials must be strings.
- *
- * The sanitiser strips `$ne` and friends, so an injection attempt arrives as an
- * empty object rather than a query operator — safe, but it then reached bcrypt
- * and threw, answering 500. A malformed credential is a client error.
- */
+// Credentials must be strings.
+//
+// The sanitiser strips `$ne` and friends, so an injection attempt arrives as an
+// empty object rather than a query operator. That is safe, but it reached bcrypt
+// and threw, answering 500. A malformed credential is a client error.
 const isText = (value) => typeof value === "string";
 
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Exact, case-insensitive match on a username. */
+// Exact, case-insensitive match on a username.
 const usernameMatcher = (username) => new RegExp(`^${escapeRegex(username)}$`, "i");
 
 const publicUser = (user) => ({
@@ -162,14 +158,12 @@ const register = async (req, res) => {
   }
 };
 
-/**
- * Find the account a login identifier names.
- *
- * Anything with an "@" is an email and is matched against emails only — never
- * against usernames — so an account cannot be shadowed by a lookalike
- * username. Older data may still hold usernames that differ only in case; an
- * exact match wins, and an ambiguous one matches nobody.
- */
+// Find the account a login identifier names.
+//
+// Anything with an "@" is an email and is matched against emails only, never
+// against usernames, so an account cannot be shadowed by a lookalike
+// username. Older data may still hold usernames that differ only in case; an
+// exact match wins, and an ambiguous one matches nobody.
 const findLoginUser = async (identifier) => {
   if (identifier.includes("@")) {
     return User.findOne({ email: identifier.toLowerCase() }).select("+password");
@@ -246,14 +240,12 @@ const getMe = async (req, res) => {
   }
 };
 
-/**
- * Logout: revoke the token, not just the cookie.
- *
- * Clearing the cookie alone left the token itself valid for the rest of its
- * 7 days, so any copy of it kept working after the user had "logged out".
- * Runs without the auth middleware so an already-dead session can still log
- * out cleanly.
- */
+// Logout: revoke the token, not just the cookie.
+//
+// Clearing the cookie alone left the token itself valid for the rest of its
+// 7 days, so any copy of it kept working after the user had "logged out".
+// Runs without the auth middleware so an already-dead session can still log
+// out cleanly.
 const logout = async (req, res) => {
   const token = readToken(req);
 
@@ -282,12 +274,10 @@ const logout = async (req, res) => {
 
 const OTP_TTL_MINUTES = 10;
 
-/**
- * Issue a fresh 6-digit code of `type` for `user` and email it.
- *
- * @returns {{ sent: true } | { sent: false, retryAfter: number }}  a refusal
- *          means a code was sent less than OTP_RESEND_SECONDS ago.
- */
+// Issue a fresh 6-digit code of `type` for `user` and email it.
+//
+// @returns {{ sent: true } | { sent: false, retryAfter: number }}  a refusal
+//          means a code was sent less than OTP_RESEND_SECONDS ago.
 const issueOtp = async (user, type, subject, describe) => {
   const recent = await OTP.findOne({ userId: user._id, type }).sort({ createdAt: -1 });
   if (recent) {
@@ -310,12 +300,10 @@ const issueOtp = async (user, type, subject, describe) => {
   return { sent: true };
 };
 
-/**
- * Check a code. Wrong guesses are capped per code: the IP rate limit alone
- * let a 6-digit code be worked through from many addresses in its lifetime.
- *
- * @returns {"ok" | "invalid" | "locked"}  "ok" consumes the code.
- */
+// Check a code. Wrong guesses are capped per code: the IP rate limit alone
+// let a 6-digit code be worked through from many addresses in its lifetime.
+//
+// @returns {"ok" | "invalid" | "locked"}  "ok" consumes the code.
 const consumeOtp = async (userId, type, code) => {
   const record = await OTP.findOne({ userId, type });
   if (!record) return "invalid";
@@ -400,14 +388,12 @@ const verifyEmail = async (req, res) => {
   }
 };
 
-/*
-    @desc   Start a password reset: email a 6-digit code
-    @route  POST /api/auth/forgot-password
-    @access Public
-
-    Always answers the same way, whether or not the address has an account,
-    so the form cannot be used to find out who is registered.
-*/
+// @desc   Start a password reset: email a 6-digit code
+// @route  POST /api/auth/forgot-password
+// @access Public
+//
+// Always answers the same way, whether or not the address has an account,
+// so the form cannot be used to find out who is registered.
 const GENERIC_RESET_REPLY = {
   success: true,
   message: "หากอีเมลนี้มีบัญชีอยู่ เราได้ส่งรหัสสำหรับตั้งรหัสผ่านใหม่ไปแล้ว กรุณาตรวจสอบอีเมล (รวมถึงโฟลเดอร์สแปม)",
@@ -441,11 +427,9 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-/*
-    @desc   Finish a password reset with the emailed code
-    @route  POST /api/auth/reset-password
-    @access Public
-*/
+// @desc   Finish a password reset with the emailed code
+// @route  POST /api/auth/reset-password
+// @access Public
 const resetPassword = async (req, res) => {
   const { email, otp, newPassword } = req.body || {};
 

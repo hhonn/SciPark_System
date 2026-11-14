@@ -1,32 +1,30 @@
-/**
- * Pricing & membership — SINGLE SOURCE OF TRUTH.
- *
- * Every fee, discount and grace period in the system is derived from this file.
- * Do not hard-code these numbers anywhere else (controllers, seeds, docs, UI copy).
- */
+// Pricing and membership. This file is the only place these numbers are defined.
+//
+// Every fee, discount and grace period in the system is derived from this file.
+// Do not hard-code these numbers anywhere else (controllers, seeds, docs, UI copy).
 
-/** Non-refundable fee charged the moment a booking is created (THB). */
+// Non-refundable fee charged the moment a booking is created (THB).
 export const BOOKING_FEE = 20;
 
-/** Hours of parking included in the booking fee. */
+// Hours of parking included in the booking fee.
 export const FREE_HOURS = 3;
 
-/** Charged per started hour after FREE_HOURS (THB/hour). */
+// Charged per started hour after FREE_HOURS (THB/hour).
 export const OVERTIME_RATE = 10;
 
-/** Minutes the user has to check in before the booking is auto-cancelled. */
+// Minutes the user has to check in before the booking is auto-cancelled.
 export const CHECKIN_GRACE_MINUTES = 30;
 
-/** Membership tiers. `rank` is what is stored on the user document. */
+// Membership tiers. `rank` is what is stored on the user document.
 export const TIERS = {
   iron: {
     id: "iron",
     rank: "Iron",
     name: "Iron",
     price: 0,
-    /** Fraction off the overtime fee (never off the booking fee). */
+    // Fraction off the overtime fee (never off the booking fee).
     discount: 0,
-    /** Multiplies the points a finished session earns (see POINTS). */
+    // Multiplies the points a finished session earns (see POINTS).
     pointsMultiplier: 1,
     maxVehicles: 1,
     features: [
@@ -75,25 +73,23 @@ export const TIERS = {
 
 export const TIER_LIST = Object.values(TIERS);
 
-/**
- * Loyalty points.
- *
- * Points used to be earned per hour parked — the longer a car sat in a bay,
- * the more it earned. In a lot with too few bays that rewards exactly the
- * wrong thing. They now reward showing up and leaving on time:
- *  - a session that was checked in and checked out (and paid) earns a base,
- *  - leaving within the free hours earns a bonus on top,
- *  - a no-show earns nothing,
- * multiplied by the member's tier.
- */
+// Loyalty points.
+//
+// Points used to be earned per hour parked, so the longer a car sat in a bay,
+// the more it earned. In a lot with too few bays that rewards exactly the
+// wrong thing. They now reward showing up and leaving on time:
+//  - a session that was checked in and checked out (and paid) earns a base,
+//  - leaving within the free hours earns a bonus on top,
+//  - a no-show earns nothing,
+// multiplied by the member's tier.
 export const POINTS = {
   completedSession: 10,
   onTimeBonus: 5,
-  /** Points lapse after this long with no earning or spending at all. */
+  // Points lapse after this long with no earning or spending at all.
   inactivityExpiryDays: 365,
 };
 
-/** What points can buy. Costs are in points. */
+// What points can buy. Costs are in points.
 export const REWARDS = {
   free_booking: {
     id: "free_booking",
@@ -121,17 +117,15 @@ export const REWARDS = {
 
 export const REWARD_LIST = Object.values(REWARDS);
 
-/** Points a finished, paid session earns. */
+// Points a finished, paid session earns.
 export const pointsForSession = ({ durationHours, tier }) => {
   const base = POINTS.completedSession + (durationHours <= FREE_HOURS ? POINTS.onTimeBonus : 0);
   return Math.floor(base * (tier?.pointsMultiplier || 1));
 };
 
-/**
- * A tier as the API exposes it. Lives here rather than in a controller so the
- * privileges screen and the public pricing endpoint cannot describe the same
- * tier differently.
- */
+// A tier as the API exposes it. Lives here rather than in a controller so the
+// privileges screen and the public pricing endpoint cannot describe the same
+// tier differently.
 export const publicTier = (tier) => ({
   id: tier.id,
   name: tier.name,
@@ -142,13 +136,11 @@ export const publicTier = (tier) => ({
   features: tier.features,
 });
 
-/**
- * Every number the UI needs to quote a price, in one payload.
- *
- * The frontend used to carry its own copies of these — in seven different
- * files — so changing a fee here left the booking screen, the landing page and
- * the terms of service all quoting the old one.
- */
+// Every number the UI needs to quote a price, in one payload.
+//
+// The frontend used to carry its own copies of these (in seven different
+// files), so changing a fee here left the booking screen, the landing page and
+// the terms of service all quoting the old one.
 export const publicPricing = () => ({
   bookingFee: BOOKING_FEE,
   freeHours: FREE_HOURS,
@@ -156,11 +148,9 @@ export const publicPricing = () => ({
   graceMinutes: CHECKIN_GRACE_MINUTES,
 });
 
-/**
- * Resolve a user document to the tier that is actually in force right now.
- * An expired subscription silently falls back to Iron so a lapsed member is
- * never charged the discounted rate.
- */
+// Resolve a user document to the tier that is actually in force right now.
+// An expired subscription silently falls back to Iron so a lapsed member is
+// never charged the discounted rate.
 export const getEffectiveTier = (user) => {
   if (!user) return TIERS.iron;
 
@@ -174,18 +164,16 @@ export const getEffectiveTier = (user) => {
   return tier;
 };
 
-/** Round money to 2 decimals without float drift (e.g. 8.999999 -> 9). */
+// Round money to 2 decimals without float drift (e.g. 8.999999 -> 9).
 const money = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
 
-/**
- * Calculate what a finished parking session costs.
- *
- * @param {Date} startedAt  actual check-in time
- * @param {Date} endedAt    actual check-out time
- * @param {object} user     user document (for tier discount + points)
- * @param {number} bookingFee  fee already charged at booking time
- * @param {object} [voucher]   optional one-shot discount { percent }
- */
+// Calculate what a finished parking session costs.
+//
+// @param {Date} startedAt  actual check-in time
+// @param {Date} endedAt    actual check-out time
+// @param {object} user     user document (for tier discount + points)
+// @param {number} bookingFee  fee already charged at booking time
+// @param {object} [voucher]   optional one-shot discount { percent }
 export const calculateSessionCost = ({ startedAt, endedAt, user, bookingFee = BOOKING_FEE, voucher = null }) => {
   const durationMs = Math.max(0, new Date(endedAt) - new Date(startedAt));
   const durationHours = durationMs / (1000 * 60 * 60);

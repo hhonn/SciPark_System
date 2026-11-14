@@ -29,7 +29,7 @@ import { canScan, isAdminUser } from './components/layout/navItems'
 const StaffScan = lazy(() => import('./pages/StaffScan'))
 const Admin = lazy(() => import('./pages/Admin'))
 
-/** Sends unauthenticated visitors to /login, remembering where they were going. */
+// Sends unauthenticated visitors to /login, remembering where they were going.
 function ProtectedRoute({ children }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const location = useLocation()
@@ -40,34 +40,32 @@ function ProtectedRoute({ children }) {
   return children
 }
 
-/** The QR scanner is for parking staff and admins only. The API enforces this
- *  too; this just keeps everyone else from landing on a screen that 403s. */
+// The QR scanner is for parking staff and admins only. The API enforces this
+//  too; this just keeps everyone else from landing on a screen that 403s.
 function StaffRoute({ children }) {
   const user = useAuthStore((s) => s.user)
   return canScan(user) ? children : <Navigate to="/app" replace />
 }
 
-/** Operator screens. Again, the API is the real gate. */
+// Operator screens. Again, the API is the real gate.
 function AdminRoute({ children }) {
   const user = useAuthStore((s) => s.user)
   return isAdminUser(user) ? children : <Navigate to="/app" replace />
 }
 
-/** /app: drivers get the lot finder, admins their dashboard. */
+// /app: drivers get the lot finder, admins their dashboard.
 function DriverHome() {
   const user = useAuthStore((s) => s.user)
   return isAdminUser(user) ? <Navigate to="/app/admin" replace /> : <Home />
 }
 
-/**
- * Keeps signed-in users out of the login/register screens.
- *
- * Honours the page the visitor was sent here from. React Router 7 runs
- * navigations as transitions, so right after a login this re-renders (with
- * the user now signed in) before Login's own navigate(from) lands; sending
- * everyone to /app here used to win that race and lose the page they wanted,
- * e.g. a bay's QR link opened while signed out.
- */
+// Keeps signed-in users out of the login/register screens.
+//
+// Honours the page the visitor was sent here from. React Router 7 runs
+// navigations as transitions, so right after a login this re-renders (with
+// the user now signed in) before Login's own navigate(from) lands; sending
+// everyone to /app here used to win that race and lose the page they wanted,
+// e.g. a bay's QR link opened while signed out.
 function PublicOnlyRoute({ children }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const location = useLocation()

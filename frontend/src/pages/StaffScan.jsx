@@ -10,7 +10,7 @@ import { formatTime } from '../utils/format'
 import { cn } from '../utils/cn'
 import { useQrScanner } from '../utils/useQrScanner'
 
-/** What the last scan did, shown large enough to read at arm's length. */
+// What the last scan did, shown large enough to read at arm's length.
 const ScanResult = ({ result, onNext }) => {
   if (!result) return null
 

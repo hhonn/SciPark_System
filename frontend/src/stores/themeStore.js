@@ -21,7 +21,7 @@ const apply = (theme) => {
     if (theme === 'system') localStorage.removeItem(STORAGE_KEY)
     else localStorage.setItem(STORAGE_KEY, theme)
   } catch {
-    /* nothing to persist to; the in-memory value still drives this session */
+    // nothing to persist to; the in-memory value still drives this session
   }
 }
 
@@ -33,7 +33,7 @@ export const useThemeStore = create((set, get) => ({
     set({ theme })
   },
 
-  /** Cycles light -> dark -> system. */
+  // Cycles light -> dark -> system.
   cycleTheme: () => {
     const order = ['light', 'dark', 'system']
     const next = order[(order.indexOf(get().theme) + 1) % order.length]

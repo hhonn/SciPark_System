@@ -1,13 +1,11 @@
-/**
- * Structured logging.
- *
- * With LOG_FORMAT=json (production) every line is one JSON object on stdout.
- * The CloudWatch agent ships stdout to CloudWatch Logs, where metric filters
- * such as `{ $.event = "booking_created" }` turn events into dashboard metrics
- * and Logs Insights can query any field — no log parsing, no extra service.
- *
- * Locally the same calls print a short human-readable line instead.
- */
+// Structured logging.
+//
+// With LOG_FORMAT=json (production) every line is one JSON object on stdout.
+// The CloudWatch agent ships stdout to CloudWatch Logs, where metric filters
+// such as `{ $.event = "booking_created" }` turn events into dashboard metrics
+// and Logs Insights can query any field. No log parsing, no extra service.
+//
+// Locally the same calls print a short human-readable line instead.
 
 const json = () => process.env.LOG_FORMAT === "json";
 
@@ -17,7 +15,7 @@ const base = () => ({
   ...(process.env.RELEASE_ID && { release: process.env.RELEASE_ID }),
 });
 
-/** A business event worth counting (booking_created, checkin, checkout, ...). */
+// A business event worth counting (booking_created, checkin, checkout, ...).
 export const logEvent = (event, fields = {}) => {
   if (json()) {
     console.log(JSON.stringify({ ...base(), level: "info", event, ...fields }));
@@ -26,7 +24,7 @@ export const logEvent = (event, fields = {}) => {
   }
 };
 
-/** An unexpected failure. */
+// An unexpected failure.
 export const logError = (context, error, fields = {}) => {
   if (json()) {
     console.error(JSON.stringify({
@@ -44,10 +42,8 @@ export const logError = (context, error, fields = {}) => {
   }
 };
 
-/**
- * One JSON line per HTTP request, for morgan. The query string is dropped:
- * it can carry search terms and tokens that have no business in a log.
- */
+// One JSON line per HTTP request, for morgan. The query string is dropped:
+// it can carry search terms and tokens that have no business in a log.
 export const jsonAccessLog = (tokens, req, res) =>
   JSON.stringify({
     ...base(),

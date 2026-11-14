@@ -1,14 +1,12 @@
 import mongoose from "mongoose";
 import PaymentMethod from "../models/paymentMethodModel.js";
 
-/**
- * Payment gateway boundary.
- *
- * SciPark has no acquiring bank yet, so this module *simulates* the charge —
- * but it simulates it honestly: a charge requires a real, active payment method
- * belonging to the user, it can fail, and every caller must handle failure.
- * Swapping in Omise/Stripe later means replacing `authorizeCharge` only.
- */
+// Payment gateway boundary.
+//
+// SciPark has no acquiring bank yet, so this module *simulates* the charge,
+// but it simulates it honestly: a charge requires a real, active payment method
+// belonging to the user, it can fail, and every caller must handle failure.
+// Swapping in Omise/Stripe later means replacing `authorizeCharge` only.
 
 export class PaymentError extends Error {
   constructor(message, code = "payment_failed") {
@@ -18,11 +16,9 @@ export class PaymentError extends Error {
   }
 }
 
-/**
- * Resolve which saved payment method to charge.
- *
- * @throws {PaymentError} when the user has nothing chargeable on file.
- */
+// Resolve which saved payment method to charge.
+//
+// @throws {PaymentError} when the user has nothing chargeable on file.
 export const resolvePaymentMethod = async ({ userId, paymentMethodId, preferredMethodId = null, session = null }) => {
   // A malformed id used to throw a Mongoose CastError whose text described the
   // schema; to the user it is simply a method that does not exist.
@@ -44,7 +40,7 @@ export const resolvePaymentMethod = async ({ userId, paymentMethodId, preferredM
 
   if (!method) method = await PaymentMethod.findOne(query).session(session);
 
-  // No default flagged yet — fall back to any active method the user has.
+  // No default flagged yet: fall back to any active method the user has.
   if (!method && !paymentMethodId) {
     method = await PaymentMethod.findOne({ user: userId, status: "active" }).session(session);
   }
@@ -61,7 +57,7 @@ export const resolvePaymentMethod = async ({ userId, paymentMethodId, preferredM
   return method;
 };
 
-/** Cards that expired last month cannot be charged this month. */
+// Cards that expired last month cannot be charged this month.
 const isCardExpired = (method) => {
   if (!["credit_card", "debit_card"].includes(method.type)) return false;
   if (!method.expiryMonth || !method.expiryYear) return false;
@@ -76,12 +72,10 @@ const isCardExpired = (method) => {
   return expiresAt.getTime() <= Date.now();
 };
 
-/**
- * Authorize and capture an amount.
- *
- * @returns {Promise<{ success: true, transactionId: string, amount: number, method: object }>}
- * @throws  {PaymentError} on a declined charge — callers must roll back.
- */
+// Authorize and capture an amount.
+//
+// @returns {Promise<{ success: true, transactionId: string, amount: number, method: object }>}
+// @throws  {PaymentError} on a declined charge; callers must roll back.
 export const authorizeCharge = async ({ userId, amount, paymentMethodId, preferredMethodId = null, session = null, description = "" }) => {
   if (!Number.isFinite(amount) || amount < 0) {
     throw new PaymentError("จำนวนเงินไม่ถูกต้อง", "invalid_amount");

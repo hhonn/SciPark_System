@@ -88,13 +88,11 @@ const configuredOrigins = [
   ...(process.env.CLIENT_URL || '').split(',').map(o => o.trim()),
 ].filter(Boolean);
 
-/**
- * A request is same-origin when the Origin header matches the host it was sent
- * to. This matters because Vite marks its built <script> and <link> tags
- * `crossorigin`, so the browser sends an Origin header even for the app's own
- * stylesheet. Rejecting that returned a JSON error in place of the CSS and the
- * page rendered unstyled.
- */
+// A request is same-origin when the Origin header matches the host it was sent
+// to. This matters because Vite marks its built <script> and <link> tags
+// `crossorigin`, so the browser sends an Origin header even for the app's own
+// stylesheet. Rejecting that returned a JSON error in place of the CSS and the
+// page rendered unstyled.
 const isSameOrigin = (req, origin) => {
   if (!origin) return true; // same-origin navigations and server-to-server calls
   try {
@@ -125,7 +123,7 @@ app.use(cors((req, callback) => {
 // zero-downtime demo script. Registered before the rate limiter (polling must
 // never be throttled) and the access log (it would drown everything else).
 // It is public, so it says only whether this instance can serve, plus which
-// release and instance answered — that is what lets a rolling deploy be seen
+// release and instance answered. That is what lets a rolling deploy be seen
 // switching over without a single failed request.
 const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString();
 
@@ -241,7 +239,7 @@ const server = app.listen(port, host, () => {
     console.log(`🚀 SciPark server is running on ${host || '*'}:${port}`)
 });
 
-// Graceful shutdown — finish in-flight requests, then stop the cron jobs.
+// Graceful shutdown: finish in-flight requests, then stop the cron jobs.
 const shutdown = async (signal) => {
   console.log(`🛑 ${signal} received: shutting down`);
   stopAutoCancelScheduler();

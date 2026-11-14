@@ -13,10 +13,8 @@ import Facts from '../ui/Facts'
 import LotLocations from './LotLocations'
 import SpotQrSheet from './SpotQrSheet'
 
-/**
- * Admin: lots and bays. Three jobs, one menu entry: the bays themselves,
- * where each lot is (for GPS check-in), and the QR stickers.
- */
+// Admin: lots and bays. Three jobs, one menu entry: the bays themselves,
+// where each lot is (for GPS check-in), and the QR stickers.
 
 const SPOT_STYLE = {
   available: { box: 'bg-ok/12 border-ok/35 text-ok', label: 'ว่าง' },
@@ -67,7 +65,7 @@ const AddLotForm = ({ onAdded }) => {
   )
 }
 
-/** One on/off setting of a lot, saved as soon as it is ticked. */
+// One on/off setting of a lot, saved as soon as it is ticked.
 const LotSwitch = ({ lot, field, title, detail, tone, onChanged }) => {
   const [busy, setBusy] = useState(false)
 

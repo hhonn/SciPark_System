@@ -4,21 +4,19 @@ import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { HttpError } from "../utils/httpError.js";
 
-/**
- * User media (vehicle photos) in Amazon S3.
- *
- * Files never pass through the app servers and never touch their disks:
- *  1. the API hands the browser a short-lived presigned POST, scoped to one key,
- *     one content type and at most MAX_PHOTO_BYTES;
- *  2. the browser uploads straight to S3;
- *  3. the API checks the object really exists and records its key.
- * Reads go out as presigned GET URLs that expire in minutes, so the bucket
- * stays fully private.
- *
- * That is what keeps the compute tier stateless: an instance can be replaced
- * at any moment without losing a single file. Disabled (503) when MEDIA_BUCKET
- * is not set, e.g. local development without AWS.
- */
+// User media (vehicle photos) in Amazon S3.
+//
+// Files never pass through the app servers and never touch their disks:
+//  1. the API hands the browser a short-lived presigned POST, scoped to one key,
+//     one content type and at most MAX_PHOTO_BYTES;
+//  2. the browser uploads straight to S3;
+//  3. the API checks the object really exists and records its key.
+// Reads go out as presigned GET URLs that expire in minutes, so the bucket
+// stays fully private.
+//
+// That is what keeps the compute tier stateless: an instance can be replaced
+// at any moment without losing a single file. Disabled (503) when MEDIA_BUCKET
+// is not set, e.g. local development without AWS.
 
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 export const PHOTO_TYPES = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
@@ -26,14 +24,14 @@ const UPLOAD_TTL_SECONDS = 300;
 const VIEW_TTL_SECONDS = 900;
 
 let client = null;
-/** Tests swap in a fake client. */
+// Tests swap in a fake client.
 export const setS3Client = (fake) => { client = fake; };
 const s3 = () => (client ||= new S3Client({ region: process.env.AWS_REGION }));
 
 const bucket = () => process.env.MEDIA_BUCKET;
 export const mediaEnabled = () => Boolean(bucket());
 
-/** Origins the browser talks to for media, for the Content-Security-Policy. */
+// Origins the browser talks to for media, for the Content-Security-Policy.
 export const mediaOrigins = () => {
   if (!mediaEnabled()) return [];
   const region = process.env.AWS_REGION || "ap-southeast-2";
@@ -44,10 +42,10 @@ const requireMedia = () => {
   if (!mediaEnabled()) throw new HttpError(503, "ระบบเก็บรูปภาพยังไม่เปิดใช้งาน", "media_disabled");
 };
 
-/** Every photo of one vehicle lives under this prefix. */
+// Every photo of one vehicle lives under this prefix.
 export const vehiclePhotoPrefix = (userId, vehicleId) => `vehicles/${userId}/${vehicleId}/`;
 
-/** A presigned POST the browser can use exactly once, for one image. */
+// A presigned POST the browser can use exactly once, for one image.
 export const createPhotoUpload = async ({ userId, vehicleId, contentType }) => {
   requireMedia();
   const ext = PHOTO_TYPES[contentType];
@@ -67,10 +65,8 @@ export const createPhotoUpload = async ({ userId, vehicleId, contentType }) => {
   return { url, fields, key, maxBytes: MAX_PHOTO_BYTES };
 };
 
-/**
- * Confirm an upload: the key must belong to this user's vehicle, and S3 must
- * really hold an image of an allowed size there.
- */
+// Confirm an upload: the key must belong to this user's vehicle, and S3 must
+// really hold an image of an allowed size there.
 export const verifyPhotoUpload = async ({ userId, vehicleId, key }) => {
   requireMedia();
   if (typeof key !== "string" || !key.startsWith(vehiclePhotoPrefix(userId, vehicleId)) || key.includes("..")) {
@@ -94,7 +90,7 @@ export const verifyPhotoUpload = async ({ userId, vehicleId, key }) => {
   return { size: head.ContentLength, contentType: head.ContentType };
 };
 
-/** A link to view a private photo, valid for a few minutes. */
+// A link to view a private photo, valid for a few minutes.
 export const photoUrl = async (key) => {
   if (!key || !mediaEnabled()) return null;
   try {
@@ -104,7 +100,7 @@ export const photoUrl = async (key) => {
   }
 };
 
-/** Best effort: a leftover file must never fail the request that removes it. */
+// Best effort: a leftover file must never fail the request that removes it.
 export const deleteMedia = async (key) => {
   if (!key || !mediaEnabled()) return;
   try {

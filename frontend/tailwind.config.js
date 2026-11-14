@@ -39,7 +39,7 @@ export default {
           900: withVar('--ink-900'),
           950: withVar('--ink-950'),
         },
-        // Semantic surfaces — these flip with the theme.
+        // Semantic surfaces. These flip with the theme.
         canvas: withVar('--canvas'),
         surface: withVar('--surface'),
         'surface-2': withVar('--surface-2'),
@@ -47,7 +47,7 @@ export default {
         content: withVar('--content'),
         'content-muted': withVar('--content-muted'),
         'content-subtle': withVar('--content-subtle'),
-        // Status — reserved meanings, see DESIGN.md.
+        // Status colours have reserved meanings, see DESIGN.md.
         ok: withVar('--ok'),
         'ok-soft': withVar('--ok-soft'),
         warn: withVar('--warn'),
@@ -90,8 +90,8 @@ export default {
         app: '1180px',
       },
       // Tailwind's opacity scale runs in steps of 5, so the subtle tints this
-      // design is built on — `bg-ok/12`, `bg-warn/6`, `bg-brand-500/8` and the
-      // rest — compiled to nothing and rendered with no background at all.
+      // design is built on (`bg-ok/12`, `bg-warn/6`, `bg-brand-500/8` and the
+      // rest) compiled to nothing and rendered with no background at all.
       // That silently flattened the status colours on badges, the lot plan's
       // bays, the notification icons and both soft button variants.
       opacity: {

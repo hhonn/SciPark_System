@@ -1,18 +1,16 @@
 import mongoose from "mongoose";
 
-/**
- * express-rate-limit store backed by MongoDB.
- *
- * The default store keeps counters in the memory of one Node process. Behind a
- * load balancer with several instances every instance counted separately, so
- * "10 failed logins per 15 minutes" quietly became 10 × N, and the counts were
- * wiped on every deploy. Keeping them in the database makes the app tier
- * stateless: any instance can serve any request and see the same limits.
- *
- * Each counter is one document { _id: "<prefix>:<key>", hits, resetAt }. The
- * increment is a single atomic pipeline update that starts a new window when
- * the old one has passed, and a TTL index removes stale counters.
- */
+// express-rate-limit store backed by MongoDB.
+//
+// The default store keeps counters in the memory of one Node process. Behind a
+// load balancer with several instances every instance counted separately, so
+// "10 failed logins per 15 minutes" quietly became 10 × N, and the counts were
+// wiped on every deploy. Keeping them in the database makes the app tier
+// stateless: any instance can serve any request and see the same limits.
+//
+// Each counter is one document { _id: "<prefix>:<key>", hits, resetAt }. The
+// increment is a single atomic pipeline update that starts a new window when
+// the old one has passed, and a TTL index removes stale counters.
 
 const COLLECTION = "ratelimits";
 let indexReady = null;
@@ -30,7 +28,7 @@ const ensureIndex = () => {
 };
 
 export class MongoRateLimitStore {
-  /** @param {string} prefix  unique per limiter (express-rate-limit requires one store per limiter) */
+  // @param {string} prefix  unique per limiter (express-rate-limit requires one store per limiter)
   constructor(prefix) {
     this.prefix = prefix;
     // Counters are shared across processes, not local to this one.

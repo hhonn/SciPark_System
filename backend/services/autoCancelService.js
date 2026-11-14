@@ -6,34 +6,28 @@ import { notifyBookingCancelled, notifyCheckInReminder } from './notificationSer
 import { runExclusive } from '../utils/jobLock.js';
 import { logEvent } from '../utils/logger.js';
 
-/**
- * Auto-Cancel Reservation Service
- *
- * ยกเลิกการจองอัตโนมัติเมื่อผู้ใช้ไม่ check-in ภายในเวลาที่กำหนด
- * - Grace period: ดู CHECKIN_GRACE_MINUTES ใน config/pricing.js
- * - ตรวจทุก 1 นาที (เดิม 5 นาที ทำให้ช่องจอดถูกค้างไว้นานเกินจำเป็น)
- * - pending -> cancelled, spot: reserved -> available
- * - ค่าจองไม่คืน
- */
+// Auto-Cancel Reservation Service
+//
+// ยกเลิกการจองอัตโนมัติเมื่อผู้ใช้ไม่ check-in ภายในเวลาที่กำหนด
+// - Grace period: ดู CHECKIN_GRACE_MINUTES ใน config/pricing.js
+// - ตรวจทุก 1 นาที (เดิม 5 นาที ทำให้ช่องจอดถูกค้างไว้นานเกินจำเป็น)
+// - pending -> cancelled, spot: reserved -> available
+// - ค่าจองไม่คืน
 
 const CHECK_INTERVAL = '* * * * *'; // every minute
 let task = null;
 
-/**
- * How long before the deadline the "you are about to lose your booking fee"
- * warning goes out. A third of the grace period leaves enough time to act
- * without nagging someone who has only just booked.
- */
+// How long before the deadline the "you are about to lose your booking fee"
+// warning goes out. A third of the grace period leaves enough time to act
+// without nagging someone who has only just booked.
 const REMINDER_MINUTES = Math.max(1, Math.round(CHECKIN_GRACE_MINUTES / 3));
 
-/**
- * Warn users whose check-in window is closing.
- *
- * Both the Terms and the Privacy policy promise this reminder, and
- * `notifyCheckInReminder` has always existed in the notification service — but
- * nothing ever called it, so the first a user heard of a lapsed booking was the
- * cancellation notice, after the 20 THB was already forfeited.
- */
+// Warn users whose check-in window is closing.
+//
+// Both the Terms and the Privacy policy promise this reminder, and
+// `notifyCheckInReminder` has always existed in the notification service, but
+// nothing ever called it, so the first a user heard of a lapsed booking was the
+// cancellation notice, after the 20 THB was already forfeited.
 export const sendCheckInReminders = async (now = new Date()) => {
   const windowEnd = new Date(now.getTime() + REMINDER_MINUTES * 60 * 1000);
 
@@ -109,7 +103,7 @@ export const autoCancelExpiredBookings = async () => {
         `fee ${booking.bookingFee} THB not refunded)`
       );
 
-      // The user was never told their booking evaporated — only the server log
+      // The user was never told their booking was cancelled. Only the server log
       // knew. Now they get the same notification as every other state change.
       await notifyBookingCancelled(
         booking.user?._id || booking.user,

@@ -1,11 +1,9 @@
 import { cn } from '../../utils/cn'
 
-/**
- * Availability meter.
- *
- * `tone` is derived from how full a zone is, so the bar carries the same
- * meaning as the badge beside it.
- */
+// Availability meter.
+//
+// `tone` is derived from how full a zone is, so the bar carries the same
+// meaning as the badge beside it.
 const TONES = {
   ok: 'bg-ok',
   warn: 'bg-warn',

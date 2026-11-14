@@ -1,14 +1,12 @@
 import api from './api'
 
-/**
- * Typed wrapper over the REST API.
- *
- * Every entry below is backed by a real route in backend/routes. The previous
- * version exported four endpoints the server never implemented
- * (`/parking/zones/:id/spots`, `/parking/spots/:id/availability`,
- * `/privileges/promos`, `/bookings/:id/extend`), so any screen that called them
- * failed with a 404 that surfaced as a generic error toast.
- */
+// Typed wrapper over the REST API.
+//
+// Every entry below is backed by a real route in backend/routes. The previous
+// version exported four endpoints the server never implemented
+// (`/parking/zones/:id/spots`, `/parking/spots/:id/availability`,
+// `/privileges/promos`, `/bookings/:id/extend`), so any screen that called them
+// failed with a 404 that surfaced as a generic error toast.
 
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
@@ -26,7 +24,7 @@ export const pointsAPI = {
   redeem: (rewardId) => api.post('/points/redeem', { rewardId }),
 }
 
-/** Operators only (the API enforces it). */
+// Operators only (the API enforces it).
 export const adminAPI = {
   getBookings: (params) => api.get('/admin/bookings', { params }),
   cancelBooking: (id, note) => api.post(`/admin/bookings/${id}/cancel`, { note }),
@@ -81,7 +79,7 @@ export const bookingAPI = {
     api.put(`/bookings/${bookingId}/checkout`, { paymentMethodId }),
 }
 
-/** Parking staff and admins. */
+// Parking staff and admins.
 export const staffAPI = {
   scan: (qrPayload) => api.post('/staff/scan', { qrPayload }),
   getZones: () => api.get('/staff/zones'),

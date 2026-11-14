@@ -34,7 +34,7 @@ import { addPoints, consumeFreeBookingCredit } from "../services/pointsService.j
 
 const ACTIVE_STATUSES = ["pending", "confirmed"];
 
-/** Consume a one-shot discount voucher, if the user redeemed one. */
+// Consume a one-shot discount voucher, if the user redeemed one.
 const takeVoucher = (user) => {
   const voucher = user?.activeDiscount;
   if (!voucher?.percent) return null;
@@ -42,11 +42,9 @@ const takeVoucher = (user) => {
   return { percent: voucher.percent };
 };
 
-/*
-    @desc   Create a new booking (charges the booking fee up front)
-    @route  POST /api/bookings
-    @access Private
-*/
+// @desc   Create a new booking (charges the booking fee up front)
+// @route  POST /api/bookings
+// @access Private
 export const createBooking = async (req, res) => {
   const session = await mongoose.startSession();
 
@@ -267,11 +265,9 @@ export const createBooking = async (req, res) => {
   }
 };
 
-/*
-    @desc   Get active booking for current user
-    @route  GET /api/bookings/active
-    @access Private
-*/
+// @desc   Get active booking for current user
+// @route  GET /api/bookings/active
+// @access Private
 export const getActiveBooking = async (req, res) => {
   try {
     const userId = req.userId;
@@ -386,11 +382,9 @@ export const getActiveBooking = async (req, res) => {
   }
 };
 
-/*
-    @desc   Re-issue the QR code for a pending booking
-    @route  GET /api/bookings/:bookingId/qr
-    @access Private
-*/
+// @desc   Re-issue the QR code for a pending booking
+// @route  GET /api/bookings/:bookingId/qr
+// @access Private
 export const getBookingQR = async (req, res) => {
   try {
     // Without this an id like "undefined" reached Mongoose, threw a CastError
@@ -436,7 +430,7 @@ export const getBookingQR = async (req, res) => {
   }
 };
 
-/** Answer for a booking whose check-in window has already closed. */
+// Answer for a booking whose check-in window has already closed.
 export const expiredResponse = (res, booking) =>
   res.status(400).json({
     success: false,
@@ -446,7 +440,7 @@ export const expiredResponse = (res, booking) =>
     refundable: false,
   });
 
-/** Cancel a booking found past its deadline and tell its owner. */
+// Cancel a booking found past its deadline and tell its owner.
 export const expireAndNotify = async (booking) => {
   const cancelled = await expirePendingBooking(booking._id);
   if (cancelled) {
@@ -458,7 +452,7 @@ export const expireAndNotify = async (booking) => {
   }
 };
 
-/** Read and range-check a coordinate pair sent by the browser. */
+// Read and range-check a coordinate pair sent by the browser.
 const parseLocation = (body = {}) => {
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
@@ -470,13 +464,11 @@ const parseLocation = (body = {}) => {
   return valid ? { latitude, longitude, accuracy } : null;
 };
 
-/**
- * Is the phone inside this lot? Shared by GPS check-in and bay-QR check-in
- * (where the lot has coordinates, scanning the sticker also needs a fix
- * inside the radius, so a photo of a sticker is no use from elsewhere).
- *
- * @returns {{ location } | { status, body }}
- */
+// Is the phone inside this lot? Shared by GPS check-in and bay-QR check-in
+// (where the lot has coordinates, scanning the sticker also needs a fix
+// inside the radius, so a photo of a sticker is no use from elsewhere).
+//
+// @returns {{ location } | { status, body }}
 const checkInLot = (body, zone, { hint }) => {
   const position = parseLocation(body);
   if (!position) {
@@ -513,7 +505,7 @@ const checkInLot = (body, zone, { hint }) => {
   return { location: { ...position, distanceMeters: distance } };
 };
 
-/** The 200 answer shared by every self check-in path. */
+// The 200 answer shared by every self check-in path.
 const checkInSucceeded = (res, booking, confirmed, method, extra = {}) => {
   notifyCheckInSuccess(confirmed.user, {
     bookingId: confirmed._id,
@@ -547,7 +539,7 @@ const invalidSpotQr = (res) =>
     message: "QR ของช่องจอดนี้ใช้ไม่ได้ (อาจถูกเปลี่ยนใหม่แล้ว) กรุณาแจ้งผู้ดูแลระบบ",
   });
 
-/** Check in by the QR sticker on the bay the driver booked. */
+// Check in by the QR sticker on the bay the driver booked.
 const checkInBySpotQr = async (req, res, booking) => {
   const spot = await findSpotByCode(req.body);
   if (!spot) return invalidSpotQr(res);
@@ -577,11 +569,9 @@ const checkInBySpotQr = async (req, res, booking) => {
   return checkInSucceeded(res, booking, confirmed, "spot_qr");
 };
 
-/**
- * DEMO ONLY: check in by scanning the QR on the driver's own ticket, for lots
- * an admin switched this on. Off everywhere else, because holding your own
- * ticket proves nothing about where you are.
- */
+// DEMO ONLY: check in by scanning the QR on the driver's own ticket, for lots
+// an admin switched this on. Off everywhere else, because holding your own
+// ticket proves nothing about where you are.
 const checkInByTicket = async (req, res, booking) => {
   const zone = booking.spot?.zone;
   if (!zone?.ticketSelfScan) {
@@ -610,7 +600,7 @@ const checkInByTicket = async (req, res, booking) => {
   return checkInSucceeded(res, booking, confirmed, "ticket_scan");
 };
 
-/** Check in by GPS alone, for lots an admin has given coordinates. */
+// Check in by GPS alone, for lots an admin has given coordinates.
 const checkInByGps = async (req, res, booking) => {
   const zone = booking.spot?.zone;
   if (!zoneHasLocation(zone)) {
@@ -631,20 +621,18 @@ const checkInByGps = async (req, res, booking) => {
   return checkInSucceeded(res, booking, confirmed, "gps", { distanceMeters: distance });
 };
 
-/*
-    @desc   Self check-in
-    @route  PUT /api/bookings/:bookingId/checkin
-    @access Private
-
-    This used to accept the QR token as proof of arrival, but the API returned
-    that token to the user the moment they booked, so anyone could check in
-    from home. Arrival is now proven one of three ways:
-      - here, body { spotId, code }: the driver scanned the QR sticker fixed to
-        the bay they booked (lots have no staff, so this is the normal way),
-      - here, body { latitude, longitude, accuracy }: a GPS fix inside the
-        lot's radius, for lots an admin has given coordinates,
-      - a staff member scans the driver's QR (POST /api/staff/scan).
-*/
+// @desc   Self check-in
+// @route  PUT /api/bookings/:bookingId/checkin
+// @access Private
+//
+// This used to accept the QR token as proof of arrival, but the API returned
+// that token to the user the moment they booked, so anyone could check in
+// from home. Arrival is now proven one of three ways:
+//   - here, body { spotId, code }: the driver scanned the QR sticker fixed to
+//     the bay they booked (lots have no staff, so this is the normal way),
+//   - here, body { latitude, longitude, accuracy }: a GPS fix inside the
+//     lot's radius, for lots an admin has given coordinates,
+//   - a staff member scans the driver's QR (POST /api/staff/scan).
 export const checkIn = async (req, res) => {
   try {
     const { bookingId } = req.params;
@@ -690,18 +678,16 @@ export const checkIn = async (req, res) => {
   }
 };
 
-/*
-    @desc   Read a scanned bay sticker before checking in
-    @route  POST /api/bookings/spot-scan
-    @access Private
-
-    Changes nothing. Tells the app which bay the sticker belongs to and how
-    that relates to the driver's booking, so it can ask "you are at A-12,
-    confirm arrival?" or explain why not.
-
-    state: ready | wrong_spot | no_booking | already_checked_in |
-           checked_in_elsewhere | expired
-*/
+// @desc   Read a scanned bay sticker before checking in
+// @route  POST /api/bookings/spot-scan
+// @access Private
+//
+// Changes nothing. Tells the app which bay the sticker belongs to and how
+// that relates to the driver's booking, so it can ask "you are at A-12,
+// confirm arrival?" or explain why not.
+//
+// state: ready | wrong_spot | no_booking | already_checked_in |
+//        checked_in_elsewhere | expired
 export const scanSpot = async (req, res) => {
   try {
     const spot = await findSpotByCode(req.body);
@@ -757,11 +743,9 @@ export const scanSpot = async (req, res) => {
   }
 };
 
-/*
-    @desc   Check out, settle overtime, release the spot
-    @route  PUT /api/bookings/:bookingId/checkout
-    @access Private
-*/
+// @desc   Check out, settle overtime, release the spot
+// @route  PUT /api/bookings/:bookingId/checkout
+// @access Private
 export const checkOut = async (req, res) => {
   const session = await mongoose.startSession();
 
@@ -818,7 +802,7 @@ export const checkOut = async (req, res) => {
           userId,
           amount: bill.overtimeCost,
           // An explicit choice is honoured strictly. Otherwise prefer the card
-          // the booking was paid with — but if the user has since removed it,
+          // the booking was paid with. If the user has since removed it,
           // fall back to their default instead of trapping the car in the bay
           // with "payment method not found".
           paymentMethodId: paymentMethodId || null,
@@ -844,7 +828,7 @@ export const checkOut = async (req, res) => {
       // legacy complete endpoint granted them, so the reward depended on which
       // button the user happened to press.
 
-      // Single use — but only spent when it actually took money off. It used
+      // Single use, but only spent when it actually took money off. It used
       // to be burned on any check-out, so a "50% off overtime" code vanished
       // on a session inside the free hours, where it had saved nothing.
       if (voucher && bill.voucherDiscount > 0) user.activeDiscount = null;
@@ -923,18 +907,14 @@ export const checkOut = async (req, res) => {
   }
 };
 
-/*
-    @desc   Legacy alias so older clients keep working
-    @route  PUT /api/bookings/:id/complete
-    @access Private
-*/
+// @desc   Legacy alias so older clients keep working
+// @route  PUT /api/bookings/:id/complete
+// @access Private
 export const completeBooking = (req, res) => checkOut(req, res);
 
-/*
-    @desc   Cancel a booking
-    @route  DELETE /api/bookings/:id
-    @access Private
-*/
+// @desc   Cancel a booking
+// @route  DELETE /api/bookings/:id
+// @access Private
 export const cancelBooking = async (req, res) => {
   const session = await mongoose.startSession();
   let booking;
@@ -1004,11 +984,9 @@ export const cancelBooking = async (req, res) => {
   }
 };
 
-/*
-    @desc   Get booking history
-    @route  GET /api/bookings/history
-    @access Private
-*/
+// @desc   Get booking history
+// @route  GET /api/bookings/history
+// @access Private
 export const getBookingHistory = async (req, res) => {
   try {
     const userId = req.userId;

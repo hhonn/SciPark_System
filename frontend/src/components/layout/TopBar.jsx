@@ -46,7 +46,7 @@ const TopBar = () => {
     try {
       await authAPI.logout()
     } catch {
-      /* the cookie is cleared client-side below regardless */
+      // the cookie is cleared client-side below regardless
     }
     logout()
     setMenuOpen(false)

@@ -1,17 +1,15 @@
-/**
- * Lock down the seed accounts and promo codes on a live database.
- *
- *   npm run secure-seed                         # dry run: report only, writes nothing
- *   npm run secure-seed -- --apply              # do it
- *   npm run secure-seed -- --apply --fix-spots  # also release spots held with no booking
- *
- * The new admin password is printed once. To choose it yourself instead:
- *   NEW_ADMIN_PASSWORD='...' npm run secure-seed -- --apply
- *
- * Old sessions: this revokes them for servers running the current code
- * (tokenVersion). A server still on the old code ignores that — rotate
- * JWT_SECRET in .env and restart to end every session there.
- */
+// Lock down the seed accounts and promo codes on a live database.
+//
+//   npm run secure-seed                         # dry run: report only, writes nothing
+//   npm run secure-seed -- --apply              # do it
+//   npm run secure-seed -- --apply --fix-spots  # also release spots held with no booking
+//
+// The new admin password is printed once. To choose it yourself instead:
+//   NEW_ADMIN_PASSWORD='...' npm run secure-seed -- --apply
+//
+// Old sessions: this revokes them for servers running the current code
+// (tokenVersion). A server still on the old code ignores that, so rotate
+// JWT_SECRET in .env and restart to end every session there.
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { secureSeedData } from "../utils/seedAccounts.js";

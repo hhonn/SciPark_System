@@ -10,13 +10,11 @@ import { getPosition, geolocationErrorMessage } from '../utils/geolocation'
 import { formatTHB, formatTime } from '../utils/format'
 import { cn } from '../utils/cn'
 
-/**
- * Where a bay's QR sticker leads (/app/arrive?s=<bay>&c=<code>).
- *
- * Reached either from the phone's camera app or from the in-app scanner. It
- * shows which bay the sticker belongs to next to the driver's booking, and
- * checks in only after the driver confirms.
- */
+// Where a bay's QR sticker leads (/app/arrive?s=<bay>&c=<code>).
+//
+// Reached either from the phone's camera app or from the in-app scanner. It
+// shows which bay the sticker belongs to next to the driver's booking, and
+// checks in only after the driver confirms.
 
 const Panel = ({ tone = 'neutral', icon: Icon, title, children }) => (
   <section

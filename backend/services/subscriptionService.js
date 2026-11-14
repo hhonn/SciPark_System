@@ -4,15 +4,13 @@ import { syncUserTier } from './membershipService.js';
 import { createNotification } from './notificationService.js';
 import { runExclusive } from '../utils/jobLock.js';
 
-/**
- * Subscription expiry service.
- *
- * Without this, `user.rank` stayed Diamond/Predator forever: the rank was set
- * on subscribe and nothing ever set it back, so a lapsed member kept their
- * discount indefinitely. Pricing also guards against this at calculation time
- * (see config/pricing.js getEffectiveTier) — this job keeps the stored data
- * honest so the UI and the billing agree.
- */
+// Subscription expiry service.
+//
+// Without this, `user.rank` stayed Diamond/Predator forever: the rank was set
+// on subscribe and nothing ever set it back, so a lapsed member kept their
+// discount indefinitely. Pricing also guards against this at calculation time
+// (see config/pricing.js getEffectiveTier). This job keeps the stored data
+// honest so the UI and the billing agree.
 
 // Every 15 minutes: between a tier expiring and this sweep the member is
 // billed as Iron, so the gap is kept short.
@@ -46,7 +44,7 @@ export const expireLapsedSubscriptions = async () => {
   }
 
   // Recompute rather than demote. The old sweep set the user to Iron unless
-  // some other row was active, and otherwise left them alone — so a member
+  // some other row was active, and otherwise left them alone. So a member
   // whose promo upgrade ended kept the expired tier's name and a past expiry
   // (billed as Iron) even though a paid subscription was still running.
   for (const [userId, subscription] of affected) {
@@ -106,10 +104,8 @@ export const startSubscriptionScheduler = () => {
   return task;
 };
 
-/**
- * Stop the sweeper. Shutdown stopped the auto-cancel task but not this one, so
- * a cron job stayed registered and held the event loop open past SIGTERM.
- */
+// Stop the sweeper. Shutdown stopped the auto-cancel task but not this one, so
+// a cron job stayed registered and held the event loop open past SIGTERM.
 export const stopSubscriptionScheduler = () => {
   if (task) {
     task.stop();

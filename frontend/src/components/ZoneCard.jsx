@@ -3,14 +3,12 @@ import { Footprints, ChevronRight, ShieldCheck } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { availabilityTone } from '../utils/format'
 
-/**
- * A parking lot, as a driver reads it.
- *
- * The count of free bays is the single thing the decision turns on, so it is
- * the largest element on the card — the previous version buried it in a badge
- * and gave the most space to a description nobody chooses a car park by.
- * Walking time sits beside it because it is the usual tie-breaker.
- */
+// A parking lot, as a driver reads it.
+//
+// The count of free bays is the single thing the decision turns on, so it is
+// the largest element on the card. The previous version buried it in a badge
+// and gave the most space to a description nobody chooses a car park by.
+// Walking time sits beside it because it is the usual tie-breaker.
 
 const TONE = {
   ok: {
@@ -36,7 +34,7 @@ const TONE = {
   },
 }
 
-/** Ten segments read as "how many bays", where a smooth bar reads as a percentage. */
+// Ten segments read as "how many bays", where a smooth bar reads as a percentage.
 const SEGMENTS = 10
 
 const ZoneCard = ({ zone, className }) => {

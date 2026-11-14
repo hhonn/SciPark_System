@@ -5,16 +5,14 @@ import { readToken, verifyToken } from "../utils/authToken.js";
 const reject = (res, code, message) =>
   res.status(401).json({ success: false, code, message });
 
-/**
- * Authenticate a request from the httpOnly cookie or an Authorization header.
- * On success `req.userId` holds the caller's id and `req.user` their document.
- *
- * A valid signature is no longer enough on its own. The token must also:
- *  - belong to a user that still exists,
- *  - carry the user's current `tokenVersion` (a password change bumps it, so
- *    every older token dies with the old password),
- *  - not have been logged out (its `jti` is not in RevokedToken).
- */
+// Authenticate a request from the httpOnly cookie or an Authorization header.
+// On success `req.userId` holds the caller's id and `req.user` their document.
+//
+// A valid signature is no longer enough on its own. The token must also:
+//  - belong to a user that still exists,
+//  - carry the user's current `tokenVersion` (a password change bumps it, so
+//    every older token dies with the old password),
+//  - not have been logged out (its `jti` is not in RevokedToken).
 const userAuth = async (req, res, next) => {
   const token = readToken(req);
   if (!token) return reject(res, "token_missing", "Unauthorized - No token provided");
@@ -58,10 +56,8 @@ const userAuth = async (req, res, next) => {
   }
 };
 
-/**
- * Operator-only guard. Must run after `userAuth`, which has already loaded
- * `isAdmin` onto `req.user`.
- */
+// Operator-only guard. Must run after `userAuth`, which has already loaded
+// `isAdmin` onto `req.user`.
 export const requireAdmin = (req, res, next) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, message: "ต้องเป็นผู้ดูแลระบบเท่านั้น" });
@@ -69,7 +65,7 @@ export const requireAdmin = (req, res, next) => {
   next();
 };
 
-/** Parking staff (QR scanning). Admins count as staff. Runs after `userAuth`. */
+// Parking staff (QR scanning). Admins count as staff. Runs after `userAuth`.
 export const requireStaff = (req, res, next) => {
   if (!req.user?.isStaff && !req.user?.isAdmin) {
     return res.status(403).json({ success: false, message: "สำหรับเจ้าหน้าที่ลานจอดเท่านั้น" });

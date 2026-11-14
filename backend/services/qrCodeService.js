@@ -1,21 +1,19 @@
 import QRCode from 'qrcode';
 import crypto from 'crypto';
 
-/**
- * QR check-in credentials.
- *
- * The QR image carries a token; only its SHA-256 hash is persisted on the
- * booking. The token is an HMAC of the booking id and the time it was issued,
- * under a server secret, so the same QR can be shown again (on another
- * screen, or as a screenshot) without storing the token, and re-issuing with
- * a new time is what replaces it. Check-in therefore proves possession of the code that was issued
- * for that specific booking, and a database dump cannot be replayed into a
- * check-in. Tokens die with the check-in deadline.
- */
+// QR check-in credentials.
+//
+// The QR image carries a token; only its SHA-256 hash is persisted on the
+// booking. The token is an HMAC of the booking id and the time it was issued,
+// under a server secret, so the same QR can be shown again (on another
+// screen, or as a screenshot) without storing the token, and re-issuing with
+// a new time is what replaces it. Check-in therefore proves possession of the code that was issued
+// for that specific booking, and a database dump cannot be replayed into a
+// check-in. Tokens die with the check-in deadline.
 
 const qrSecret = () => process.env.QR_SECRET || process.env.JWT_SECRET;
 
-/** The token for a booking issued at a given moment: 64 hex characters. */
+// The token for a booking issued at a given moment: 64 hex characters.
 export const deriveToken = (bookingId, issuedAt) =>
   crypto
     .createHmac('sha256', qrSecret())
@@ -25,9 +23,7 @@ export const deriveToken = (bookingId, issuedAt) =>
 export const hashToken = (token) =>
   crypto.createHash('sha256').update(String(token)).digest('hex');
 
-/**
- * Compare two tokens without leaking their difference through timing.
- */
+// Compare two tokens without leaking their difference through timing.
 export const tokensMatch = (plainToken, storedHash) => {
   if (!plainToken || !storedHash) return false;
   const candidate = Buffer.from(hashToken(plainToken), 'hex');
@@ -36,12 +32,10 @@ export const tokensMatch = (plainToken, storedHash) => {
   return crypto.timingSafeEqual(candidate, expected);
 };
 
-/**
- * The QR code for a booking as issued at `booking.qrIssuedAt` (set it first;
- * a new time gives a new code).
- *
- * @returns {Promise<{ qrCodeDataURL: string, token: string, tokenHash: string, expiresAt: number }>}
- */
+// The QR code for a booking as issued at `booking.qrIssuedAt` (set it first;
+// a new time gives a new code).
+//
+// @returns {Promise<{ qrCodeDataURL: string, token: string, tokenHash: string, expiresAt: number }>}
 export const generateBookingQRCode = async (booking) => {
   if (!booking.qrIssuedAt) throw new Error('qrIssuedAt must be set before generating a QR');
   const token = deriveToken(booking._id.toString(), booking.qrIssuedAt);
@@ -68,13 +62,11 @@ export const generateBookingQRCode = async (booking) => {
   return { qrCodeDataURL, token, tokenHash: hashToken(token), expiresAt };
 };
 
-/**
- * Parse whatever the scanner sent us. Accepts the raw JSON payload from the QR
- * image or a bare token string, so a hardware scanner and the in-app button can
- * share one endpoint.
- *
- * @returns {{ token: string|null, bookingId: string|null, expiresAt: number|null }}
- */
+// Parse whatever the scanner sent us. Accepts the raw JSON payload from the QR
+// image or a bare token string, so a hardware scanner and the in-app button can
+// share one endpoint.
+//
+// @returns {{ token: string|null, bookingId: string|null, expiresAt: number|null }}
 export const parseScannedPayload = (raw) => {
   if (!raw) return { token: null, bookingId: null, expiresAt: null };
 
@@ -105,11 +97,9 @@ export const parseScannedPayload = (raw) => {
   }
 };
 
-/**
- * Validate a scan against a booking.
- *
- * @returns {{ valid: boolean, reason?: string }}
- */
+// Validate a scan against a booking.
+//
+// @returns {{ valid: boolean, reason?: string }}
 export const verifyScan = (booking, storedHash, rawPayload) => {
   const { token, bookingId } = parseScannedPayload(rawPayload);
 

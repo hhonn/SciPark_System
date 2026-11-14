@@ -6,12 +6,10 @@ import Logo from '../components/Logo'
 import { useAuthStore } from '../stores/authStore'
 import { usePricing } from '../stores/pricingStore'
 
-/**
- * Post-registration setup prompt.
- *
- * A booking needs a payment method, so new users are pointed at that first
- * rather than discovering the requirement when their first booking is refused.
- */
+// Post-registration setup prompt.
+//
+// A booking needs a payment method, so new users are pointed at that first
+// rather than discovering the requirement when their first booking is refused.
 const buildSteps = ({ bookingFee }) => [
   {
     icon: CreditCard,

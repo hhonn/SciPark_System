@@ -41,7 +41,7 @@ const emptyForm = {
   isDefault: false,
 }
 
-/** Group digits in fours as the user types, for readability only. */
+// Group digits in fours as the user types, for readability only.
 const formatCardInput = (value) =>
   value
     .replace(/\D/g, '')

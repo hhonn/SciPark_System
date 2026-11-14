@@ -1,10 +1,8 @@
 import { LayoutGrid, Ticket, Crown, UserRound, ScanLine, Gauge, ClipboardList, ParkingSquare, Users } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 
-/**
- * One nav definition drives the desktop rail and the mobile tab bar, so the
- * two can never drift apart.
- */
+// One nav definition drives the desktop rail and the mobile tab bar, so the
+// two can never drift apart.
 export const NAV_ITEMS = [
   // Drivers. An admin account runs the system rather than parks, so these
   // are hidden for it (test the driver side with a normal account).
@@ -22,12 +20,12 @@ export const NAV_ITEMS = [
   { to: '/app/staff', label: 'สแกนเช็คอิน', short: 'สแกน', icon: ScanLine, staffOnly: true },
 ]
 
-/** Staff and admins can scan; everyone else never sees the entry. */
+// Staff and admins can scan; everyone else never sees the entry.
 export const canScan = (user) => Boolean(user?.isStaff || user?.isAdmin)
 
 export const isAdminUser = (user) => Boolean(user?.isAdmin)
 
-/** The nav items this user should see. */
+// The nav items this user should see.
 export const useNavItems = () => {
   const user = useAuthStore((s) => s.user)
   const admin = isAdminUser(user)

@@ -5,10 +5,8 @@ import ParkingZone from "../models/parkingZoneModel.js";
 import { HttpError, sendError } from "../utils/httpError.js";
 import { logEvent } from "../utils/logger.js";
 
-/**
- * Lots and bays, for admins. Before this, a lot or a bay could only be made by
- * the seed script, and a bay under repair could not be taken out of booking.
- */
+// Lots and bays, for admins. Before this, a lot or a bay could only be made by
+// the seed script, and a bay under repair could not be taken out of booking.
 
 const MAX_SPOTS_PER_CALL = 200;
 
@@ -32,20 +30,18 @@ const shapeLot = (zone, counts = {}) => ({
   },
 });
 
-/** Keep the zone's stored spot count in step with its bays. */
+// Keep the zone's stored spot count in step with its bays.
 const syncTotal = async (zoneId) => {
   const total = await ParkingSpot.countDocuments({ zone: zoneId });
   await ParkingZone.updateOne({ _id: zoneId }, { totalSpots: total });
   return total;
 };
 
-/**
- * "A01-A20, B1, B2" -> ["A01", ..., "A20", "B1", "B2"].
- * A range keeps the zero padding of its first number ("A01-A20" gives A01..A20).
- *
- * @returns {string[]} unique bay numbers, upper-cased
- * @throws {HttpError} 400 for anything it cannot read, or too many bays
- */
+// "A01-A20, B1, B2" -> ["A01", ..., "A20", "B1", "B2"].
+// A range keeps the zero padding of its first number ("A01-A20" gives A01..A20).
+//
+// @returns {string[]} unique bay numbers, upper-cased
+// @throws {HttpError} 400 for anything it cannot read, or too many bays
 export const parseSpotNumbers = (text) => {
   const out = [];
   for (const raw of String(text || "").split(/[\s,]+/).filter(Boolean)) {
@@ -71,11 +67,9 @@ export const parseSpotNumbers = (text) => {
   return unique;
 };
 
-/*
-    @desc   Every lot, with bay counts by status
-    @route  GET /api/admin/lots
-    @access Admin
-*/
+// @desc   Every lot, with bay counts by status
+// @route  GET /api/admin/lots
+// @access Admin
 export const listLots = async (req, res) => {
   try {
     const [zones, counts] = await Promise.all([
@@ -96,12 +90,10 @@ export const listLots = async (req, res) => {
   }
 };
 
-/*
-    @desc   Add a lot (bays are added separately)
-    @route  POST /api/admin/lots
-    @access Admin
-    @body   { zoneName, name, building? }
-*/
+// @desc   Add a lot (bays are added separately)
+// @route  POST /api/admin/lots
+// @access Admin
+// @body   { zoneName, name, building? }
 export const createLot = async (req, res) => {
   try {
     const zoneName = String(req.body?.zoneName || "").trim().toUpperCase();
@@ -128,11 +120,9 @@ export const createLot = async (req, res) => {
   }
 };
 
-/*
-    @desc   Bays of one lot, with who holds the busy ones
-    @route  GET /api/admin/lots/:id/spots
-    @access Admin
-*/
+// @desc   Bays of one lot, with who holds the busy ones
+// @route  GET /api/admin/lots/:id/spots
+// @access Admin
 export const listLotSpots = async (req, res) => {
   try {
     const { id } = req.params;
@@ -171,12 +161,10 @@ export const listLotSpots = async (req, res) => {
   }
 };
 
-/*
-    @desc   Add bays to a lot
-    @route  POST /api/admin/lots/:id/spots
-    @access Admin
-    @body   { spots: "A01-A20, B1", floor? }
-*/
+// @desc   Add bays to a lot
+// @route  POST /api/admin/lots/:id/spots
+// @access Admin
+// @body   { spots: "A01-A20, B1", floor? }
 export const addLotSpots = async (req, res) => {
   try {
     const { id } = req.params;
@@ -222,15 +210,13 @@ export const addLotSpots = async (req, res) => {
   }
 };
 
-/*
-    @desc   Close a bay (repairs, an event) or open it again
-    @route  PUT /api/admin/spots/:id/closed
-    @access Admin
-    @body   { closed: boolean }
-
-    Both directions are conditional updates, so a bay cannot be closed in the
-    instant someone books it, nor "opened" out from under a booking.
-*/
+// @desc   Close a bay (repairs, an event) or open it again
+// @route  PUT /api/admin/spots/:id/closed
+// @access Admin
+// @body   { closed: boolean }
+//
+// Both directions are conditional updates, so a bay cannot be closed in the
+// instant someone books it, nor "opened" out from under a booking.
 export const setSpotClosed = async (req, res) => {
   try {
     const { id } = req.params;
@@ -268,12 +254,10 @@ export const setSpotClosed = async (req, res) => {
   }
 };
 
-/*
-    @desc   Change a lot's settings
-    @route  PUT /api/admin/lots/:id
-    @access Admin
-    @body   { spotStickers?, ticketSelfScan?, name?, building? }
-*/
+// @desc   Change a lot's settings
+// @route  PUT /api/admin/lots/:id
+// @access Admin
+// @body   { spotStickers?, ticketSelfScan?, name?, building? }
 export const updateLot = async (req, res) => {
   try {
     const { id } = req.params;

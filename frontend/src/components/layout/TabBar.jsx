@@ -3,12 +3,10 @@ import { useNavItems } from './navItems'
 import { useBookingStore } from '../../stores/bookingStore'
 import { cn } from '../../utils/cn'
 
-/**
- * Mobile bottom navigation.
- *
- * Sits in its own fixed element rather than nested inside the header, and the
- * page reserves matching padding so it never covers the last row of content.
- */
+// Mobile bottom navigation.
+//
+// Sits in its own fixed element rather than nested inside the header, and the
+// page reserves matching padding so it never covers the last row of content.
 const TabBar = () => {
   const activeBooking = useBookingStore((s) => s.activeBooking)
   // At most five fit a phone: a driver has four (five for staff), an admin five.

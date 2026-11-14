@@ -7,21 +7,17 @@ import { mediaEnabled, photoUrl, deleteMedia } from "../services/mediaService.js
 
 const ACTIVE_STATUSES = ["pending", "confirmed"];
 
-/**
- * Plates are stored without whitespace, so every lookup has to normalise too.
- * Checking the raw input against normalised rows let "กข 1234" and "กข  1234"
- * both pass the duplicate check and then collide on the unique index, which
- * surfaced to the user as a 500 rather than "this plate is already registered".
- */
+// Plates are stored without whitespace, so every lookup has to normalise too.
+// Checking the raw input against normalised rows let "กข 1234" and "กข  1234"
+// both pass the duplicate check and then collide on the unique index, which
+// surfaced to the user as a 500 rather than "this plate is already registered".
 const normalisePlate = (value) => String(value ?? "").trim().replace(/\s+/g, "");
 
-/** A duplicate that still slips past the pre-check lands on the unique index. */
+// A duplicate that still slips past the pre-check lands on the unique index.
 const isDuplicateKey = (error) => error?.code === 11000;
 
-/*
-    @desc    Add a new vehicle for the logged-in user
-    @route   POST /api/vehicles
-*/
+// @desc    Add a new vehicle for the logged-in user
+// @route   POST /api/vehicles
 export const addVehicle = async (req, res) => {
   try {
     const { licensePlate, brand, model, color } = req.body;
@@ -107,10 +103,8 @@ export const addVehicle = async (req, res) => {
   }
 };
 
-/*
-    @desc    Get all vehicles for the logged-in user
-    @route   GET /api/vehicles
-*/
+// @desc    Get all vehicles for the logged-in user
+// @route   GET /api/vehicles
 export const getUserAllVehicles = async (req, res) => {
   try {
     // ดึง userId จาก middleware
@@ -160,10 +154,8 @@ export const getUserAllVehicles = async (req, res) => {
   }
 };
 
-/*
-    @desc    Update a vehicle
-    @route   PUT /api/vehicles/:id
-*/
+// @desc    Update a vehicle
+// @route   PUT /api/vehicles/:id
 export const updateVehicle = async (req, res) => {
   try {
     const userId = req.userId;
@@ -234,10 +226,8 @@ export const updateVehicle = async (req, res) => {
   }
 };
 
-/*
-    @desc    Delete a vehicle
-    @route   DELETE /api/vehicles/:id
-*/
+// @desc    Delete a vehicle
+// @route   DELETE /api/vehicles/:id
 export const deleteVehicle = async (req, res) => {
   try {
     const userId = req.userId;
@@ -295,10 +285,8 @@ export const deleteVehicle = async (req, res) => {
   }
 };
 
-/*
-    @desc    Set vehicle as default
-    @route   PUT /api/vehicles/:id/default
-*/
+// @desc    Set vehicle as default
+// @route   PUT /api/vehicles/:id/default
 export const setDefaultVehicle = async (req, res) => {
   try {
     const userId = req.userId;

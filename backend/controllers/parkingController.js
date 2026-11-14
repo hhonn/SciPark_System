@@ -14,11 +14,9 @@ const shapeSpot = (spot) => ({
   facilities: spot.facilities || [],
 });
 
-/*
-    @desc   Get all zones with live availability
-    @route  GET /api/parking/zones
-    @access Public
-*/
+// @desc   Get all zones with live availability
+// @route  GET /api/parking/zones
+// @access Public
 export const getAllZones = async (req, res) => {
   try {
     // One aggregation instead of three countDocuments per zone: the old code
@@ -80,11 +78,9 @@ export const getAllZones = async (req, res) => {
   }
 };
 
-/*
-    @desc   Get a zone with its spots
-    @route  GET /api/parking/zones/:id
-    @access Public
-*/
+// @desc   Get a zone with its spots
+// @route  GET /api/parking/zones/:id
+// @access Public
 export const getZoneById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -132,11 +128,9 @@ export const getZoneById = async (req, res) => {
   }
 };
 
-/*
-    @desc   Get the spots of one zone
-    @route  GET /api/parking/zones/:id/spots
-    @access Public
-*/
+// @desc   Get the spots of one zone
+// @route  GET /api/parking/zones/:id/spots
+// @access Public
 export const getSpotsByZone = async (req, res) => {
   try {
     const { id } = req.params;
@@ -157,11 +151,9 @@ export const getSpotsByZone = async (req, res) => {
   }
 };
 
-/*
-    @desc   Get all parking spots
-    @route  GET /api/parking/spots
-    @access Public
-*/
+// @desc   Get all parking spots
+// @route  GET /api/parking/spots
+// @access Public
 export const getAllSpots = async (req, res) => {
   try {
     const { zoneId, status, floor, building } = req.query;
@@ -196,11 +188,9 @@ export const getAllSpots = async (req, res) => {
   }
 };
 
-/*
-    @desc   Get one spot
-    @route  GET /api/parking/spots/:id
-    @access Public
-*/
+// @desc   Get one spot
+// @route  GET /api/parking/spots/:id
+// @access Public
 export const getSpotById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -240,11 +230,9 @@ export const getSpotById = async (req, res) => {
   }
 };
 
-/*
-    @desc   Update parking spot status
-    @route  PUT /api/parking/spots/:id/status
-    @access Private (Admin)
-*/
+// @desc   Update parking spot status
+// @route  PUT /api/parking/spots/:id/status
+// @access Private (Admin)
 export const updateSpotStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -300,11 +288,9 @@ export const updateSpotStatus = async (req, res) => {
   }
 };
 
-/*
-    @desc   Get parking statistics
-    @route  GET /api/parking/stats
-    @access Public
-*/
+// @desc   Get parking statistics
+// @route  GET /api/parking/stats
+// @access Public
 export const getParkingStats = async (req, res) => {
   try {
     const [totalZones, statusCounts] = await Promise.all([

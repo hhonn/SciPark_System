@@ -1,12 +1,10 @@
 import { cn } from '../../utils/cn'
 
-/**
- * Status pill.
- *
- * Every tone pairs colour with a text label and, for status tones, a dot.
- * Colour alone is not a signal — roughly 8% of men cannot separate the red and
- * green states, and those two carry the most important meanings in this app.
- */
+// Status pill.
+//
+// Every tone pairs colour with a text label and, for status tones, a dot.
+// Colour alone is not a signal: roughly 8% of men cannot separate the red and
+// green states, and those two carry the most important meanings in this app.
 const TONES = {
   neutral: 'bg-surface-2 text-content-muted border-hairline',
   brand: 'bg-brand-500/10 text-brand-600 border-brand-500/20',

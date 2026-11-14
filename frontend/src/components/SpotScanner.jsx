@@ -5,7 +5,7 @@ import { useQrScanner, decodeQrImage } from '../utils/useQrScanner'
 import { parseSpotQr } from '../utils/spotQr'
 import { cn } from '../utils/cn'
 
-/** The QR on a booking's ticket carries JSON with the booking id. */
+// The QR on a booking's ticket carries JSON with the booking id.
 const isBookingQr = (text) => {
   try {
     return Boolean(JSON.parse(text)?.bookingId)
@@ -14,14 +14,12 @@ const isBookingQr = (text) => {
   }
 }
 
-/**
- * Check-in scanner. Opens the camera as soon as it mounts and closes it on
- * unmount; a picture can be chosen instead (a screenshot of the ticket).
- *
- * - A bay sticker calls onSpot({ spotId, code }).
- * - The driver's own ticket QR calls onTicket(text), but only when onTicket
- *   is given (demo lots). Otherwise it gets a hint, as does anything else.
- */
+// Check-in scanner. Opens the camera as soon as it mounts and closes it on
+// unmount; a picture can be chosen instead (a screenshot of the ticket).
+//
+// - A bay sticker calls onSpot({ spotId, code }).
+// - The driver's own ticket QR calls onTicket(text), but only when onTicket
+//   is given (demo lots). Otherwise it gets a hint, as does anything else.
 const SpotScanner = ({ onSpot, onTicket, spotNumber, allowSpot = true }) => {
   const [hint, setHint] = useState(null)
   const resumeRef = useRef(() => {})

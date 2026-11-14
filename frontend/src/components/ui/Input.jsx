@@ -2,11 +2,9 @@ import { forwardRef, useId, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '../../utils/cn'
 
-/**
- * Labelled input. The label is always rendered — placeholder-only fields lose
- * their label the moment the user starts typing, which is exactly when they
- * need it.
- */
+// Labelled input. The label is always rendered. Placeholder-only fields lose
+// their label the moment the user starts typing, which is exactly when they
+// need it.
 const Input = forwardRef(function Input(
   { label, hint, error, icon: Icon, className, id, type = 'text', ...props },
   ref

@@ -15,26 +15,22 @@ import { MIN_PASSWORD_LENGTH } from "../config/auth.js";
 
 dotenv.config();
 
-/** Promo codes are seeded relative to today, not a hard-coded 2024 date. */
+// Promo codes are seeded relative to today, not a hard-coded 2024 date.
 const daysFromNow = (days) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
 const isProduction = process.env.NODE_ENV === "production";
 
-/**
- * Seeding wipes every collection, users and bookings included. On a live
- * database that is unrecoverable, so production requires an explicit --force.
- */
+// Seeding wipes every collection, users and bookings included. On a live
+// database that is unrecoverable, so production requires an explicit --force.
 if (isProduction && !process.argv.includes("--force")) {
   console.error("❌ NODE_ENV=production: seeding deletes ALL data (users, bookings, ...).");
   console.error("   Re-run with `npm run seed -- --force` if that is really what you want.");
   process.exit(1);
 }
 
-/**
- * The default passwords are published in the README, so a production seed must
- * not use them: anyone could sign in as the admin. Production reads them from
- * the environment instead and refuses to run without them.
- */
+// The default passwords are published in the README, so a production seed must
+// not use them: anyone could sign in as the admin. Production reads them from
+// the environment instead and refuses to run without them.
 const seedPassword = (envName, devDefault) => {
   const value = process.env[envName];
   if (value) {

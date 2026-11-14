@@ -12,7 +12,7 @@ import { cn } from '../utils/cn'
 
 const POLL_INTERVAL = 60_000
 
-/** Icon glyph per notification type — meaning at a glance in a long list. */
+// Icon glyph per notification type, so a long list can be read at a glance.
 const TYPE_STYLE = {
   booking_created: 'bg-brand-500/12 text-brand-600',
   checkin_success: 'bg-ok/12 text-ok',
@@ -52,7 +52,7 @@ const NotificationBell = () => {
       const { data } = await notificationAPI.getUnreadCount()
       setUnread(data?.data?.unreadCount ?? 0)
     } catch {
-      /* a failed badge poll is not worth interrupting the user for */
+      // a failed badge poll is not worth interrupting the user for
     }
   }, [isAuthenticated])
 

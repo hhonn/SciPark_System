@@ -27,18 +27,16 @@ import { usePricing } from '../stores/pricingStore'
 import { availabilityTone, formatTHB } from '../utils/format'
 import { cn } from '../utils/cn'
 
-/**
- * Reshape a `POST /bookings` response into what `GET /bookings/active` returns.
- *
- * The two endpoints describe the same booking differently, and the store was
- * being seeded with the create shape as-is. The booking screen then read
- * `pricing.estimatedTotalCost`, `duration` and `timeRemainingToCheckIn` off an
- * object that had none of them, until its own fetch replaced the whole thing a
- * moment later.
- *
- * Nothing here is guessed: a booking that was created one instant ago is always
- * pending, un-checked-in, and has accrued no parking time and no overtime.
- */
+// Reshape a `POST /bookings` response into what `GET /bookings/active` returns.
+//
+// The two endpoints describe the same booking differently, and the store was
+// being seeded with the create shape as-is. The booking screen then read
+// `pricing.estimatedTotalCost`, `duration` and `timeRemainingToCheckIn` off an
+// object that had none of them, until its own fetch replaced the whole thing a
+// moment later.
+//
+// Nothing here is guessed: a booking that was created one instant ago is always
+// pending, un-checked-in, and has accrued no parking time and no overtime.
 const toActiveBooking = (booking) => {
   const remainingMs = booking.checkInDeadline
     ? Math.max(0, new Date(booking.checkInDeadline).getTime() - Date.now())
@@ -74,15 +72,13 @@ const toActiveBooking = (booking) => {
   }
 }
 
-/**
- * Zone detail and booking confirmation.
- *
- * Implements Test Cases 19–21: the confirmation step states the fee, the
- * check-in deadline and the forfeiture warning, and creates nothing until the
- * user confirms. The spot number is assigned by the server on confirm, so the
- * screen deliberately does not promise a specific bay beforehand. Every figure
- * quoted here comes from the server (see stores/pricingStore).
- */
+// Zone detail and booking confirmation.
+//
+// Implements Test Cases 19–21: the confirmation step states the fee, the
+// check-in deadline and the forfeiture warning, and creates nothing until the
+// user confirms. The spot number is assigned by the server on confirm, so the
+// screen deliberately does not promise a specific bay beforehand. Every figure
+// quoted here comes from the server (see stores/pricingStore).
 const ParkingDetail = () => {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -301,7 +297,7 @@ const ParkingDetail = () => {
         </ul>
       </section>
 
-      {/* Spot map — informational. The server assigns the bay on confirm. */}
+      {/* Spot map, for information only. The server assigns the bay on confirm. */}
       {spots.length > 0 && (
         <section className="bg-surface border border-hairline rounded-lg p-5 sm:p-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -327,7 +323,7 @@ const ParkingDetail = () => {
         </section>
       )}
 
-      {/* Sticky action bar — the primary action stays reachable one-handed. */}
+      {/* Sticky action bar, so the main action stays reachable one-handed. */}
       <div className="sticky bottom-[calc(theme(spacing.tabbar)+0.5rem)] lg:bottom-4 z-30">
         <div className="bg-surface/95 backdrop-blur-xl border border-hairline rounded-lg shadow-e3 p-4 flex items-center justify-between gap-4">
           <div>
@@ -396,7 +392,7 @@ const ParkingDetail = () => {
             </div>
           </dl>
 
-          {/* Vehicle — required: the staff scan checks the plate against the car. */}
+          {/* Vehicle is required: the staff scan checks the plate against the car. */}
           <div>
             <label htmlFor="vehicle" className="block mb-1.5 text-small font-medium text-content">
               ยานพาหนะ

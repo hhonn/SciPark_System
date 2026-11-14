@@ -1,20 +1,18 @@
-/**
- * One-off data fixes for an existing database (`npm run migrate`).
- *
- *   npm run migrate              # dry run: reports what would change
- *   npm run migrate -- --apply   # writes the changes
- *
- * Safe to run more than once: each step only touches rows that still need it.
- *
- * 1. Un-escape text. The request sanitiser used to store "<" as "&lt;" and
- *    ">" as "&gt;", so a name typed "A<B" sits in the database as "A&lt;B"
- *    and the app shows the entity literally. Passwords are not touched here:
- *    they are hashes, and login repairs them (see utils/password.js).
- *
- * 2. Open the points ledger. Balances earned before the ledger existed get
- *    an "opening_balance" row, and their expiry clock starts today rather
- *    than being treated as a year stale.
- */
+// One-off data fixes for an existing database (`npm run migrate`).
+//
+//   npm run migrate              # dry run: reports what would change
+//   npm run migrate -- --apply   # writes the changes
+//
+// Safe to run more than once: each step only touches rows that still need it.
+//
+// 1. Un-escape text. The request sanitiser used to store "<" as "&lt;" and
+//    ">" as "&gt;", so a name typed "A<B" sits in the database as "A&lt;B"
+//    and the app shows the entity literally. Passwords are not touched here:
+//    they are hashes, and login repairs them (see utils/password.js).
+//
+// 2. Open the points ledger. Balances earned before the ledger existed get
+//    an "opening_balance" row, and their expiry clock starts today rather
+//    than being treated as a year stale.
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import User from "../models/userModel.js";
@@ -26,7 +24,7 @@ dotenv.config();
 
 const apply = process.argv.includes("--apply");
 
-/** Fields that hold free text a user typed. */
+// Fields that hold free text a user typed.
 const TEXT_FIELDS = [
   { model: User, label: "users", fields: ["name", "username"] },
   { model: Vehicle, label: "vehicles", fields: ["licensePlate", "brand", "model", "color"] },

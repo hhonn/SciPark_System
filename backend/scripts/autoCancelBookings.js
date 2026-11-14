@@ -1,8 +1,6 @@
-/**
- * One-shot auto-cancel sweep (`npm run auto-cancel`).
- * The server already runs this every minute; this entry point exists for
- * manual testing and for hosts that prefer an external cron.
- */
+// One-shot auto-cancel sweep (`npm run auto-cancel`).
+// The server already runs this every minute; this entry point exists for
+// manual testing and for hosts that prefer an external cron.
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { autoCancelExpiredBookings } from "../services/autoCancelService.js";

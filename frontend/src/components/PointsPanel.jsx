@@ -20,10 +20,8 @@ const REASON_LABEL = {
   admin_adjust: 'ปรับโดยเจ้าหน้าที่',
 }
 
-/**
- * Points: how they are earned, what they buy, and where they went.
- * `onChange` lets the page refresh what a reward affects (tier, voucher).
- */
+// Points: how they are earned, what they buy, and where they went.
+// `onChange` lets the page refresh what a reward affects (tier, voucher).
 const PointsPanel = ({ onChange }) => {
   const [data, setData] = useState(null)
   const [confirm, setConfirm] = useState(null)
@@ -75,7 +73,7 @@ const PointsPanel = ({ onChange }) => {
         </div>
       </div>
 
-      {/* How to earn — so the number above means something. */}
+      {/* How to earn, so the number above means something. */}
       <div className="rounded-md bg-surface-2 p-3 text-small text-content-muted space-y-0.5">
         <p>
           จอดเสร็จ (เช็คอินและเช็คเอาต์) ได้ <strong className="text-content">{rules.completedSession}</strong> แต้ม

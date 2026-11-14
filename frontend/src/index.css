@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ==========================================================================
-   Design tokens — the single source of truth is /DESIGN.md.
+   Design tokens. The single source of truth is /DESIGN.md.
    Colours are stored as raw RGB channels so Tailwind can apply opacity.
    ========================================================================== */
 
@@ -199,7 +199,7 @@
   }
 }
 
-/* Scrollbar — quiet, themed, not a gradient. */
+/* Scrollbar: quiet, themed, not a gradient. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

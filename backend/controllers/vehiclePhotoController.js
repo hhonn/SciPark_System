@@ -12,11 +12,9 @@ const ownVehicle = async (req) => {
   return vehicle;
 };
 
-/*
-    @desc   Get a one-time presigned POST to upload this car's photo to S3
-    @route  POST /api/vehicles/:id/photo/upload   { contentType }
-    @access Private
-*/
+// @desc   Get a one-time presigned POST to upload this car's photo to S3
+// @route  POST /api/vehicles/:id/photo/upload   { contentType }
+// @access Private
 export const requestPhotoUpload = async (req, res) => {
   try {
     const vehicle = await ownVehicle(req);
@@ -31,11 +29,9 @@ export const requestPhotoUpload = async (req, res) => {
   }
 };
 
-/*
-    @desc   Attach an uploaded photo to the car (replaces the old one)
-    @route  PUT /api/vehicles/:id/photo   { key }
-    @access Private
-*/
+// @desc   Attach an uploaded photo to the car (replaces the old one)
+// @route  PUT /api/vehicles/:id/photo   { key }
+// @access Private
 export const confirmPhoto = async (req, res) => {
   try {
     const vehicle = await ownVehicle(req);
@@ -54,11 +50,9 @@ export const confirmPhoto = async (req, res) => {
   }
 };
 
-/*
-    @desc   Remove the car's photo
-    @route  DELETE /api/vehicles/:id/photo
-    @access Private
-*/
+// @desc   Remove the car's photo
+// @route  DELETE /api/vehicles/:id/photo
+// @access Private
 export const removePhoto = async (req, res) => {
   try {
     const vehicle = await ownVehicle(req);

@@ -1,12 +1,10 @@
 import LegalPage from './LegalPage'
 import { usePricingStore } from '../stores/pricingStore'
 
-/**
- * Every fee quoted below comes from the server (see stores/pricingStore), not
- * from numbers typed into this file. These are the terms a user is agreeing to,
- * so they are the last place that should be allowed to drift from what the
- * billing code actually charges.
- */
+// Every fee quoted below comes from the server (see stores/pricingStore), not
+// from numbers typed into this file. These are the terms a user is agreeing to,
+// so they are the last place that should be allowed to drift from what the
+// billing code actually charges.
 const buildSections = ({ bookingFee, freeHours, overtimeRate, graceMinutes }, tierDiscount) => [
   {
     heading: 'การใช้บริการ',

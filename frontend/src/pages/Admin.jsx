@@ -32,7 +32,7 @@ const STATUS_BADGE = {
   cancelled: { tone: 'neutral', label: 'ยกเลิก' },
 }
 
-/** Re-run a search shortly after typing stops, not on every key. */
+// Re-run a search shortly after typing stops, not on every key.
 const useDebounced = (value, ms = 350) => {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -352,7 +352,7 @@ const SECTIONS = {
   },
 }
 
-/** One admin screen per menu entry; see components/layout/navItems.js. */
+// One admin screen per menu entry; see components/layout/navItems.js.
 const Admin = ({ section = 'dashboard' }) => {
   const { title, description, View } = SECTIONS[section] || SECTIONS.dashboard
 

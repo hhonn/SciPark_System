@@ -5,19 +5,17 @@ import { X } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import Button from './Button'
 
-/**
- * Dialog rendered in a portal.
- *
- * Handles the three things the old modal did not: Escape closes it, focus is
- * trapped inside it, and the page behind it stops scrolling.
- */
+// Dialog rendered in a portal.
+//
+// Handles the three things the old modal did not: Escape closes it, focus is
+// trapped inside it, and the page behind it stops scrolling.
 const Modal = ({ open, onClose, title, description, children, footer, size = 'md', className }) => {
   const panelRef = useRef(null)
   const reduce = useReducedMotion()
 
   // Callers pass an inline arrow for onClose, so its identity changes on every
   // render. Holding it in a ref keeps the Escape handler current while letting
-  // the effect below depend on `open` alone — when it depended on onClose too,
+  // the effect below depend on `open` alone. When it depended on onClose too,
   // every keystroke in a modal form re-ran the effect and its autofocus timer
   // yanked the caret back to the first field after one character.
   const onCloseRef = useRef(onClose)

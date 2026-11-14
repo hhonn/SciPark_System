@@ -1,11 +1,9 @@
 import mongoose from "mongoose";
 
-/**
- * Connect to MongoDB.
- *
- * Both spellings of the variable name are accepted, because the code and the
- * env templates used to disagree about which one to read.
- */
+// Connect to MongoDB.
+//
+// Both spellings of the variable name are accepted, because the code and the
+// env templates used to disagree about which one to read.
 const connectDB = async () => {
   const uri = process.env.MONGO_URI || process.env.MONGODB_URI;
 

@@ -5,7 +5,7 @@ export const Spinner = ({ className }) => (
   <Loader2 className={cn('animate-spin text-brand-500', className)} aria-hidden="true" />
 )
 
-/** Full-page loading state. */
+// Full-page loading state.
 export const PageLoader = ({ label = 'กำลังโหลด...' }) => (
   <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3" role="status">
     <Spinner className="w-8 h-8" />
@@ -13,13 +13,11 @@ export const PageLoader = ({ label = 'กำลังโหลด...' }) => (
   </div>
 )
 
-/**
- * Content-shaped placeholder.
- *
- * Preferred over a spinner wherever the final layout is known: the page does
- * not jump when data lands, which matters most on the zone list users open
- * first.
- */
+// Content-shaped placeholder.
+//
+// Preferred over a spinner wherever the final layout is known: the page does
+// not jump when data lands, which matters most on the zone list users open
+// first.
 export const Skeleton = ({ className }) => (
   <div className={cn('skeleton', className)} aria-hidden="true" />
 )

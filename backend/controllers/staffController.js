@@ -12,15 +12,13 @@ import { logEvent } from "../utils/logger.js";
 const invalidQr = (res, message = "QR Code ไม่ถูกต้องหรือถูกออกใหม่แล้ว") =>
   res.status(400).json({ success: false, code: "invalid_qr", message });
 
-/*
-    @desc   Check a driver in by scanning their QR
-    @route  POST /api/staff/scan
-    @access Staff / Admin
-
-    The scan is the proof of arrival: the staff member is physically at the lot
-    and sees the car. The QR carries a random token; only its hash is stored,
-    so the booking is looked up by that hash.
-*/
+// @desc   Check a driver in by scanning their QR
+// @route  POST /api/staff/scan
+// @access Staff / Admin
+//
+// The scan is the proof of arrival: the staff member is physically at the lot
+// and sees the car. The QR carries a random token; only its hash is stored,
+// so the booking is looked up by that hash.
 export const scanCheckIn = async (req, res) => {
   try {
     const { qrPayload } = req.body || {};
@@ -112,11 +110,9 @@ const shapeZoneLocation = (zone) => ({
   gpsCheckIn: zoneHasLocation(zone),
 });
 
-/*
-    @desc   Lots and their GPS check-in settings
-    @route  GET /api/staff/zones
-    @access Staff / Admin
-*/
+// @desc   Lots and their GPS check-in settings
+// @route  GET /api/staff/zones
+// @access Staff / Admin
 export const listZoneLocations = async (req, res) => {
   try {
     const zones = await ParkingZone.find({}).sort({ zoneName: 1 });
@@ -126,14 +122,12 @@ export const listZoneLocations = async (req, res) => {
   }
 };
 
-/*
-    @desc   Set (or clear) a lot's GPS position
-    @route  PUT /api/staff/zones/:id/location
-    @access Admin
-
-    Body { latitude, longitude, radiusMeters } — or { clear: true } to switch
-    GPS self check-in off for the lot again.
-*/
+// @desc   Set (or clear) a lot's GPS position
+// @route  PUT /api/staff/zones/:id/location
+// @access Admin
+//
+// Body { latitude, longitude, radiusMeters }, or { clear: true } to switch
+// GPS self check-in off for the lot again.
 export const setZoneLocation = async (req, res) => {
   try {
     const { id } = req.params;

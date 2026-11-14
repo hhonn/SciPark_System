@@ -1,10 +1,8 @@
-/**
- * End-to-end smoke test (`npm run smoke`).
- *
- * Boots the real Express app against an in-memory MongoDB and walks the whole
- * booking lifecycle, asserting the behaviours the Test_Case_SciPark document
- * specifies. No network, no external database — safe to run anywhere.
- */
+// End-to-end smoke test (`npm run smoke`).
+//
+// Boots the real Express app against an in-memory MongoDB and walks the whole
+// booking lifecycle, asserting the behaviours the Test_Case_SciPark document
+// specifies. No network and no external database, so it runs anywhere.
 import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 import mongoose from 'mongoose';
 import assert from 'node:assert/strict';
@@ -710,7 +708,7 @@ const run = async () => {
   const { requireStaff } = await import('../middleware/userAuth.js');
   const { expirePendingBooking, confirmCheckIn, distanceMeters } = await import('../services/checkInService.js');
 
-  // A lot with real coordinates (Faculty of Science, KMITL — roughly).
+  // A lot with real coordinates (roughly the Faculty of Science, KMITL).
   const LOT = { latitude: 13.7299, longitude: 100.7782 };
   const gpsZone = await ParkingZone.create({
     zoneName: 'GPSLOT', name: 'ลาน GPS', totalSpots: 3, ...LOT, checkInRadiusMeters: 100,

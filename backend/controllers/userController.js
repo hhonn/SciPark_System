@@ -9,14 +9,12 @@ import { verifyPassword } from "../utils/password.js";
 
 const ACTIVE_STATUSES = ["pending", "confirmed"];
 
-/**
- * Spend and savings across a user's finished bookings.
- *
- * Two bugs lived here: `totalSpent` summed `cost` (overtime only) and quietly
- * dropped every booking fee, and savings were re-derived from the current rank
- * with percentages that matched neither the pricing config nor each other.
- * Both now come from what was actually billed and stored on the booking.
- */
+// Spend and savings across a user's finished bookings.
+//
+// Two bugs lived here: `totalSpent` summed `cost` (overtime only) and quietly
+// dropped every booking fee, and savings were re-derived from the current rank
+// with percentages that matched neither the pricing config nor each other.
+// Both now come from what was actually billed and stored on the booking.
 const summariseSpend = (bookings, forfeited = []) => {
   let totalSpent = 0;
   let totalSavings = 0;
@@ -42,11 +40,9 @@ const summariseSpend = (bookings, forfeited = []) => {
   return { totalSpent: Math.round(totalSpent), totalSavings: Math.round(totalSavings) };
 };
 
-/*
-    @desc   Get user profile
-    @route  GET /api/user/profile
-    @access Private
-*/
+// @desc   Get user profile
+// @route  GET /api/user/profile
+// @access Private
 export const getProfile = async (req, res) => {
   try {
     const userId = req.userId;
@@ -99,11 +95,9 @@ export const getProfile = async (req, res) => {
   }
 };
 
-/*
-    @desc   Update user profile
-    @route  PUT /api/user/profile
-    @access Private
-*/
+// @desc   Update user profile
+// @route  PUT /api/user/profile
+// @access Private
 export const updateProfile = async (req, res) => {
   try {
     const { name, phone } = req.body;
@@ -169,11 +163,9 @@ export const updateProfile = async (req, res) => {
   }
 };
 
-/*
-    @desc   Change password
-    @route  PUT /api/user/change-password
-    @access Private
-*/
+// @desc   Change password
+// @route  PUT /api/user/change-password
+// @access Private
 export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -227,11 +219,9 @@ export const changePassword = async (req, res) => {
   }
 };
 
-/*
-    @desc   Booking history (flat shape used by the profile screen)
-    @route  GET /api/user/bookings
-    @access Private
-*/
+// @desc   Booking history (flat shape used by the profile screen)
+// @route  GET /api/user/bookings
+// @access Private
 export const getBookingHistory = async (req, res) => {
   try {
     const userId = req.userId;
@@ -295,11 +285,9 @@ export const getBookingHistory = async (req, res) => {
   }
 };
 
-/*
-    @desc   Aggregate user statistics
-    @route  GET /api/user/stats
-    @access Private
-*/
+// @desc   Aggregate user statistics
+// @route  GET /api/user/stats
+// @access Private
 export const getUserStats = async (req, res) => {
   try {
     const userId = req.userId;

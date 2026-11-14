@@ -1,18 +1,16 @@
 import { create } from 'zustand'
 import { pricingAPI } from '../utils/apiService'
 
-/**
- * Pricing, from the server.
- *
- * `backend/config/pricing.js` is the single source of truth and says so, but
- * the frontend used to keep its own copies of every number — the booking fee
- * alone was typed out in seven files, including the terms of service. Changing
- * a fee on the server left the whole UI quoting the old one.
- *
- * The values below are a first-paint fallback only; `hydrate()` replaces them
- * with the server's as soon as it answers. `npm run smoke` asserts that this
- * fallback still matches the backend config, so it cannot drift unnoticed.
- */
+// Pricing, from the server.
+//
+// `backend/config/pricing.js` is the single source of truth and says so, but
+// the frontend used to keep its own copies of every number. The booking fee
+// alone was typed out in seven files, including the terms of service. Changing
+// a fee on the server left the whole UI quoting the old one.
+//
+// The values below are a first-paint fallback only; `hydrate()` replaces them
+// with the server's as soon as it answers. `npm run smoke` asserts that this
+// fallback still matches the backend config, so it cannot drift unnoticed.
 export const PRICING_FALLBACK = {
   bookingFee: 20,
   freeHours: 3,
@@ -20,7 +18,7 @@ export const PRICING_FALLBACK = {
   graceMinutes: 30,
 }
 
-/** Discount percentages per paid tier, used in the marketing and legal copy. */
+// Discount percentages per paid tier, used in the marketing and legal copy.
 export const TIER_DISCOUNT_FALLBACK = {
   diamond: 10,
   predator: 15,
@@ -59,5 +57,5 @@ export const usePricingStore = create((set, get) => ({
   },
 }))
 
-/** Read-only accessor for components that only need the numbers. */
+// Read-only accessor for components that only need the numbers.
 export const usePricing = () => usePricingStore((s) => s.pricing)

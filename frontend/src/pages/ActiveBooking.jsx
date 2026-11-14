@@ -86,11 +86,9 @@ const ActiveBooking = () => {
     : null
   const isPending = activeBooking?.status === 'pending'
 
-  /**
-   * Countdown driven off the deadline timestamp rather than by decrementing a
-   * counter: a decrementing timer drifts badly whenever a phone sleeps or the
-   * tab is backgrounded, and this one is deciding whether 20 baht is lost.
-   */
+  // Countdown driven off the deadline timestamp rather than by decrementing a
+  // counter: a decrementing timer drifts badly whenever a phone sleeps or the
+  // tab is backgrounded, and this one is deciding whether 20 baht is lost.
   useEffect(() => {
     if (!isPending || !deadline) {
       setRemainingMs(0)
@@ -136,10 +134,8 @@ const ActiveBooking = () => {
     }
   }, [pendingId])
 
-  /**
-   * Self check-in, proven by where the phone is. The server decides whether
-   * that is inside the lot; this only gathers the fix.
-   */
+  // Self check-in, proven by where the phone is. The server decides whether
+  // that is inside the lot; this only gathers the fix.
   const handleGpsCheckIn = async () => {
     let position
     try {
@@ -169,10 +165,8 @@ const ActiveBooking = () => {
     }
   }
 
-  /**
-   * Demo lots: the driver scanned the QR on their own ticket. Where the lot
-   * has coordinates the server also wants a fix inside it.
-   */
+  // Demo lots: the driver scanned the QR on their own ticket. Where the lot
+  // has coordinates the server also wants a fix inside it.
   const handleTicketScan = useCallback(
     async (qrPayload) => {
       setScanOpen(false)

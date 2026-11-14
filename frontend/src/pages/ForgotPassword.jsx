@@ -12,11 +12,9 @@ import { MIN_PASSWORD_LENGTH } from '../config/auth'
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-/**
- * Two steps: ask for a code by email, then set a new password with it.
- * The server answers step one identically for registered and unknown
- * addresses, so this screen never says whether an account exists.
- */
+// Two steps: ask for a code by email, then set a new password with it.
+// The server answers step one identically for registered and unknown
+// addresses, so this screen never says whether an account exists.
 const ForgotPassword = () => {
   const navigate = useNavigate()
   const reduce = useReducedMotion()

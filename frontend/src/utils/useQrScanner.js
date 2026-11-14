@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-/** How often a camera frame is decoded. Every frame would cook a phone. */
+// How often a camera frame is decoded. Every frame would cook a phone.
 const DECODE_EVERY_MS = 150
 
-/**
- * Camera QR scanner, shared by the staff scan page and the driver's
- * "scan the bay sticker" button.
- *
- * Decodes with jsQR rather than the browser's BarcodeDetector, which Safari on
- * iPhone does not have. jsQR is loaded on the first start(), so nobody
- * downloads it until they actually open a camera.
- *
- * After a detection the scanner pauses; call resume() to scan again.
- */
+// Camera QR scanner, shared by the staff scan page and the driver's
+// "scan the bay sticker" button.
+//
+// Decodes with jsQR rather than the browser's BarcodeDetector, which Safari on
+// iPhone does not have. jsQR is loaded on the first start(), so nobody
+// downloads it until they actually open a camera.
+//
+// After a detection the scanner pauses; call resume() to scan again.
 export function useQrScanner(onDetect) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -113,10 +111,8 @@ export function useQrScanner(onDetect) {
 
 export default useQrScanner
 
-/**
- * Read a QR from a picture (a screenshot of the ticket, say): one phone
- * cannot point its camera at its own screen. Returns the text, or null.
- */
+// Read a QR from a picture (a screenshot of the ticket, say): one phone
+// cannot point its camera at its own screen. Returns the text, or null.
 export async function decodeQrImage(file) {
   const [{ default: jsQR }, url] = [await import('jsqr'), URL.createObjectURL(file)]
   try {

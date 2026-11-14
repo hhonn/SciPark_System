@@ -1,8 +1,6 @@
-/**
- * The `lint` script has existed since the first commit but there was no config
- * file, so `npm run lint` always failed with "couldn't find a configuration
- * file" rather than linting anything.
- */
+// The `lint` script has existed since the first commit but there was no config
+// file, so `npm run lint` always failed with "couldn't find a configuration
+// file" rather than linting anything.
 module.exports = {
   root: true,
   env: { browser: true, es2021: true },

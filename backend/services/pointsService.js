@@ -10,17 +10,15 @@ import { runExclusive } from "../utils/jobLock.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Record a ledger row for a change that has already been applied. */
+// Record a ledger row for a change that has already been applied.
 const record = (userId, delta, balanceAfter, reason, extra, session) =>
   PointTransaction.create(
     [{ user: userId, delta, balanceAfter, reason, ...extra }],
     { session }
   );
 
-/**
- * Add points (earned from a session, a promo code, ...).
- * @returns the new balance
- */
+// Add points (earned from a session, a promo code, ...).
+// @returns the new balance
 export const addPoints = async ({ userId, amount, reason, bookingId = null, note = "", session = null }) => {
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
@@ -35,14 +33,12 @@ export const addPoints = async ({ userId, amount, reason, bookingId = null, note
   return user.points;
 };
 
-/**
- * Spend points, atomically: the balance check and the deduction are one
- * conditional update, so two redemptions fired at once can never take the
- * balance below zero.
- *
- * @throws {HttpError} 409 when the balance is too low
- * @returns the new balance
- */
+// Spend points, atomically: the balance check and the deduction are one
+// conditional update, so two redemptions fired at once can never take the
+// balance below zero.
+//
+// @throws {HttpError} 409 when the balance is too low
+// @returns the new balance
 export const spendPoints = async ({ userId, amount, reason, rewardId = null, note = "", session = null }) => {
   const user = await User.findOneAndUpdate(
     { _id: userId, points: { $gte: amount } },
@@ -63,10 +59,8 @@ export const spendPoints = async ({ userId, amount, reason, rewardId = null, not
   return user.points;
 };
 
-/**
- * Exchange points for a reward from REWARDS.
- * Anything that refuses the reward does so before the points are taken.
- */
+// Exchange points for a reward from REWARDS.
+// Anything that refuses the reward does so before the points are taken.
 export const redeemReward = async ({ userId, rewardId }) => {
   const reward = REWARDS[rewardId];
   if (!reward) throw new HttpError(404, "ไม่พบรางวัลที่เลือก");
@@ -128,10 +122,8 @@ export const redeemReward = async ({ userId, rewardId }) => {
   return result;
 };
 
-/**
- * Use one "free booking" credit inside a booking transaction.
- * @throws {HttpError} 409 when the user has none left
- */
+// Use one "free booking" credit inside a booking transaction.
+// @throws {HttpError} 409 when the user has none left
 export const consumeFreeBookingCredit = async (userId, session) => {
   const { modifiedCount } = await User.updateOne(
     { _id: userId, freeBookingCredits: { $gte: 1 } },
@@ -143,7 +135,7 @@ export const consumeFreeBookingCredit = async (userId, session) => {
   }
 };
 
-/** Zero out points that have seen no activity for POINTS.inactivityExpiryDays. */
+// Zero out points that have seen no activity for POINTS.inactivityExpiryDays.
 export const expireInactivePoints = async (now = new Date()) => {
   const cutoff = new Date(now.getTime() - POINTS.inactivityExpiryDays * DAY_MS);
   const stale = await User.find({ points: { $gt: 0 }, pointsActivityAt: { $ne: null, $lt: cutoff } }).select("points");

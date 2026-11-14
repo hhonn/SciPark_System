@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { HttpError, sendError } from "../utils/httpError.js";
 import PaymentMethod from "../models/paymentMethodModel.js";
 
-/** Luhn checksum — rejects typo'd card numbers before they reach the gateway. */
+// Luhn checksum: rejects typo'd card numbers before they reach the gateway.
 const luhnValid = (digits) => {
   let sum = 0;
   let double = false;
@@ -18,7 +18,7 @@ const luhnValid = (digits) => {
   return sum % 10 === 0;
 };
 
-/** Card network, inferred from the IIN range, for display only. */
+// Card network, inferred from the IIN range, for display only.
 const detectBrand = (digits) => {
   if (/^4/.test(digits)) return "Visa";
   if (/^5[1-5]/.test(digits) || /^2[2-7]/.test(digits)) return "Mastercard";
@@ -30,16 +30,14 @@ const detectBrand = (digits) => {
 const CARD_TYPES = ["credit_card", "debit_card"];
 const WALLET_TYPES = ["promptpay", "truewallet"];
 
-/**
- * Fields a client may supply. Everything else on the document — `user`,
- * `status`, `cardLast4`, `cardBrand` — is decided by the server.
- *
- * The create handler used to spread the whole request body over the document
- * *after* setting `user`, so a request carrying `"user": "<someone else's id>"`
- * filed the payment method under that account, and `cardLast4` could be forged
- * to display a card the user does not hold. `updatePaymentMethod` already
- * whitelisted for this reason; creation did not.
- */
+// Fields a client may supply. Everything else on the document (`user`,
+// `status`, `cardLast4`, `cardBrand`) is decided by the server.
+//
+// The create handler used to spread the whole request body over the document
+// *after* setting `user`, so a request carrying `"user": "<someone else's id>"`
+// filed the payment method under that account, and `cardLast4` could be forged
+// to display a card the user does not hold. `updatePaymentMethod` already
+// whitelisted for this reason; creation did not.
 const CREATABLE = [
   "cardHolderName",
   "expiryMonth",
@@ -50,7 +48,7 @@ const CREATABLE = [
   "accountName",
 ];
 
-/** Same list, minus nothing: an edit may touch exactly what a create may. */
+// Same list, minus nothing: an edit may touch exactly what a create may.
 const EDITABLE = CREATABLE;
 
 const pick = (source, keys) =>
@@ -59,11 +57,9 @@ const pick = (source, keys) =>
     return out;
   }, {});
 
-/**
- * Validate an expiry pair and report whether it is already in the past.
- * A card that cannot be charged should be refused at the point it is added,
- * not at the point the user is standing at a barrier trying to pay.
- */
+// Validate an expiry pair and report whether it is already in the past.
+// A card that cannot be charged should be refused at the point it is added,
+// not at the point the user is standing at a barrier trying to pay.
 const checkExpiry = (expiryMonth, expiryYear) => {
   const month = parseInt(expiryMonth, 10);
   const year = parseInt(expiryYear, 10);
@@ -84,11 +80,9 @@ const checkExpiry = (expiryMonth, expiryYear) => {
   return null;
 };
 
-/*
-    @desc   Get all payment methods for user
-    @route  GET /api/payment-methods
-    @access Private
-*/
+// @desc   Get all payment methods for user
+// @route  GET /api/payment-methods
+// @access Private
 export const getPaymentMethods = async (req, res) => {
   try {
     const userId = req.userId;
@@ -141,11 +135,9 @@ export const getPaymentMethods = async (req, res) => {
   }
 };
 
-/*
-    @desc   Add new payment method
-    @route  POST /api/payment-methods
-    @access Private
-*/
+// @desc   Add new payment method
+// @route  POST /api/payment-methods
+// @access Private
 export const addPaymentMethod = async (req, res) => {
   const session = await mongoose.startSession();
 
@@ -240,11 +232,9 @@ export const addPaymentMethod = async (req, res) => {
   }
 };
 
-/*
-    @desc   Update payment method
-    @route  PUT /api/payment-methods/:id
-    @access Private
-*/
+// @desc   Update payment method
+// @route  PUT /api/payment-methods/:id
+// @access Private
 export const updatePaymentMethod = async (req, res) => {
   const session = await mongoose.startSession();
 
@@ -324,11 +314,9 @@ export const updatePaymentMethod = async (req, res) => {
   }
 };
 
-/*
-    @desc   Delete payment method
-    @route  DELETE /api/payment-methods/:id
-    @access Private
-*/
+// @desc   Delete payment method
+// @route  DELETE /api/payment-methods/:id
+// @access Private
 export const deletePaymentMethod = async (req, res) => {
   const session = await mongoose.startSession();
 
@@ -404,11 +392,9 @@ export const deletePaymentMethod = async (req, res) => {
   }
 };
 
-/*
-    @desc   Set payment method as default
-    @route  PUT /api/payment-methods/:id/default
-    @access Private
-*/
+// @desc   Set payment method as default
+// @route  PUT /api/payment-methods/:id/default
+// @access Private
 export const setDefaultPaymentMethod = async (req, res) => {
   const session = await mongoose.startSession();
 

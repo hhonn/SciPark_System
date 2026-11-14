@@ -1,9 +1,7 @@
 import { vehicleAPI } from './apiService'
 
-/**
- * Shrink a photo in the browser before it is uploaded: a phone camera's 4–8 MB
- * JPEG becomes ~200 KB, which is faster on mobile data and cheaper to store.
- */
+// Shrink a photo in the browser before it is uploaded: a phone camera's 4–8 MB
+// JPEG becomes ~200 KB, which is faster on mobile data and cheaper to store.
 export const resizeImage = (file, maxSide = 1280, quality = 0.85) =>
   new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
@@ -24,12 +22,10 @@ export const resizeImage = (file, maxSide = 1280, quality = 0.85) =>
     img.src = url
   })
 
-/**
- * Upload a car photo straight to S3, then tell the API to attach it.
- *
- * The file never goes through our servers: the API only signs a one-time POST
- * (one key, one content type, size-capped) and verifies the result.
- */
+// Upload a car photo straight to S3, then tell the API to attach it.
+//
+// The file never goes through our servers: the API only signs a one-time POST
+// (one key, one content type, size-capped) and verifies the result.
 export const uploadVehiclePhoto = async (vehicleId, file) => {
   const blob = await resizeImage(file)
   const { data } = await vehicleAPI.requestPhotoUpload(vehicleId, 'image/jpeg')

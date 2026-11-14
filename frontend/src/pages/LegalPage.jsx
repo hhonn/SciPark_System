@@ -2,12 +2,10 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import Logo from '../components/Logo'
 
-/**
- * Shared shell for Terms and Privacy.
- *
- * The two pages were near-identical copies before; keeping one layout means a
- * change to the legal chrome cannot land on one page and miss the other.
- */
+// Shared shell for Terms and Privacy.
+//
+// The two pages were near-identical copies before; keeping one layout means a
+// change to the legal chrome cannot land on one page and miss the other.
 const LegalPage = ({ title, updated, sections }) => (
   <div className="min-h-screen bg-canvas">
     <header className="border-b border-hairline">

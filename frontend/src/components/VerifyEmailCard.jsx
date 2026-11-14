@@ -7,10 +7,8 @@ import { authAPI } from '../utils/apiService'
 import { apiErrorMessage } from '../utils/api'
 import { useAuthStore } from '../stores/authStore'
 
-/**
- * Email verification by 6-digit code. The API for this has existed all along;
- * nothing in the app ever called it, so no account could become verified.
- */
+// Email verification by 6-digit code. The API for this has existed all along;
+// nothing in the app ever called it, so no account could become verified.
 const VerifyEmailCard = ({ email, onVerified }) => {
   const updateUser = useAuthStore((s) => s.updateUser)
   const required = useAuthStore((s) => Boolean(s.user?.emailVerificationRequired))

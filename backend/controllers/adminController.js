@@ -12,14 +12,12 @@ import { addPoints } from "../services/pointsService.js";
 import { HttpError, sendError } from "../utils/httpError.js";
 import { logEvent } from "../utils/logger.js";
 
-/**
- * Operator tools.
- *
- * Before these existed an admin could only flip a spot's status. A car whose
- * card failed at check-out stayed "parked" forever, an abandoned booking
- * held its bay until the driver came back, and nobody could see who was
- * where. Every action here records which admin took it.
- */
+// Operator tools.
+//
+// Before these existed an admin could only flip a spot's status. A car whose
+// card failed at check-out stayed "parked" forever, an abandoned booking
+// held its bay until the driver came back, and nobody could see who was
+// where. Every action here records which admin took it.
 
 const ACTIVE = ["pending", "confirmed"];
 const STATUS_FILTERS = {
@@ -57,11 +55,9 @@ const shapeBooking = (b) => ({
   adminNote: b.adminNote,
 });
 
-/*
-    @desc   Bookings, filterable and searchable
-    @route  GET /api/admin/bookings?status=active&q=<plate|email|name|spot>&page=1
-    @access Admin
-*/
+// @desc   Bookings, filterable and searchable
+// @route  GET /api/admin/bookings?status=active&q=<plate|email|name|spot>&page=1
+// @access Admin
 export const listBookings = async (req, res) => {
   try {
     const status = String(req.query.status || "active");
@@ -109,11 +105,9 @@ export const listBookings = async (req, res) => {
   }
 };
 
-/*
-    @desc   Cancel a pending or checked-in booking and free its spot
-    @route  POST /api/admin/bookings/:id/cancel   { note }
-    @access Admin
-*/
+// @desc   Cancel a pending or checked-in booking and free its spot
+// @route  POST /api/admin/bookings/:id/cancel   { note }
+// @access Admin
 export const adminCancelBooking = async (req, res) => {
   const session = await mongoose.startSession();
   let booking;
@@ -161,16 +155,14 @@ export const adminCancelBooking = async (req, res) => {
   }
 };
 
-/*
-    @desc   Check a parked car out on the driver's behalf
-    @route  POST /api/admin/bookings/:id/force-checkout   { note }
-    @access Admin
-
-    Bills exactly as a normal check-out would. If the charge is declined the
-    booking still closes and the bay is freed — the amount is recorded as
-    owed (paymentStatus "failed", listed under the "unpaid" filter) instead of
-    keeping the car "parked" and the bay blocked indefinitely.
-*/
+// @desc   Check a parked car out on the driver's behalf
+// @route  POST /api/admin/bookings/:id/force-checkout   { note }
+// @access Admin
+//
+// Bills exactly as a normal check-out would. If the charge is declined the
+// booking still closes and the bay is freed. The amount is recorded as
+// owed (paymentStatus "failed", listed under the "unpaid" filter) instead of
+// keeping the car "parked" and the bay blocked indefinitely.
 export const forceCheckout = async (req, res) => {
   const session = await mongoose.startSession();
   let booking;
@@ -256,11 +248,9 @@ export const forceCheckout = async (req, res) => {
   }
 };
 
-/*
-    @desc   Users, searchable, with their roles
-    @route  GET /api/admin/users?q=&page=
-    @access Admin
-*/
+// @desc   Users, searchable, with their roles
+// @route  GET /api/admin/users?q=&page=
+// @access Admin
 export const listUsers = async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();
@@ -295,14 +285,12 @@ export const listUsers = async (req, res) => {
   }
 };
 
-/*
-    @desc   Grant or revoke the parking-staff role
-    @route  PUT /api/admin/users/:id/staff   { isStaff: boolean }
-    @access Admin
-
-    Admin rights themselves are deliberately not grantable here: that stays
-    a server-side action, so one stolen admin session cannot mint more admins.
-*/
+// @desc   Grant or revoke the parking-staff role
+// @route  PUT /api/admin/users/:id/staff   { isStaff: boolean }
+// @access Admin
+//
+// Admin rights themselves are deliberately not grantable here: that stays
+// a server-side action, so one stolen admin session cannot mint more admins.
 export const setStaff = async (req, res) => {
   try {
     const { id } = req.params;
@@ -322,14 +310,12 @@ export const setStaff = async (req, res) => {
   }
 };
 
-/*
-    @desc   Bays of one lot with the codes for their QR stickers
-    @route  GET /api/admin/spot-codes?zone=<zoneId>
-    @access Admin
-
-    Bays that never had a code get one here, so a new lot is ready to print
-    the first time an admin opens it. Without ?zone the first lot is shown.
-*/
+// @desc   Bays of one lot with the codes for their QR stickers
+// @route  GET /api/admin/spot-codes?zone=<zoneId>
+// @access Admin
+//
+// Bays that never had a code get one here, so a new lot is ready to print
+// the first time an admin opens it. Without ?zone the first lot is shown.
 export const listSpotCodes = async (req, res) => {
   try {
     const zones = await ParkingZone.find({}).select("zoneName name building").sort({ zoneName: 1 });
@@ -361,11 +347,9 @@ export const listSpotCodes = async (req, res) => {
   }
 };
 
-/*
-    @desc   New code for one bay (the printed sticker stops working)
-    @route  POST /api/admin/spots/:id/rotate-code
-    @access Admin
-*/
+// @desc   New code for one bay (the printed sticker stops working)
+// @route  POST /api/admin/spots/:id/rotate-code
+// @access Admin
 export const rotateSpotCheckInCode = async (req, res) => {
   try {
     const { id } = req.params;

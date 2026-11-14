@@ -1,9 +1,7 @@
-/**
- * Run the real server against a throwaway in-memory database (`npm run dev:local`).
- *
- * Lets anyone clone the repo and see the whole app working without a MongoDB
- * Atlas account or a .env file. Data disappears when the process stops.
- */
+// Run the real server against a throwaway in-memory database (`npm run dev:local`).
+//
+// Lets anyone clone the repo and see the whole app working without a MongoDB
+// Atlas account or a .env file. Data disappears when the process stops.
 import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 
 const start = async () => {

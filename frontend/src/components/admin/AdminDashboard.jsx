@@ -10,12 +10,10 @@ import { formatDateTime, formatTHB, formatTime } from '../../utils/format'
 import { cn } from '../../utils/cn'
 import Facts from '../ui/Facts'
 
-/**
- * Admin overview. Charts are plain HTML bars: one series each, except the
- * lot bars, whose two coloured states (occupied, reserved) are a validated
- * colour-blind-safe pair, always shown with a legend and the numbers in text.
- * Free space is the empty track; closed bays are a neutral hatch.
- */
+// Admin overview. Charts are plain HTML bars: one series each, except the
+// lot bars, whose two coloured states (occupied, reserved) are a validated
+// colour-blind-safe pair, always shown with a legend and the numbers in text.
+// Free space is the empty track; closed bays are a neutral hatch.
 
 const REFRESH_MS = 30_000
 const WEEKDAY = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.']
@@ -50,7 +48,7 @@ const Stat = ({ label, value, sub }) => (
   </div>
 )
 
-/** Hover tooltip for one chart; positioned inside the chart's relative box. */
+// Hover tooltip for one chart; positioned inside the chart's relative box.
 const useTip = () => {
   const [tip, setTip] = useState(null)
   const show = (event, content) => {
@@ -87,7 +85,7 @@ const Legend = () => (
   </div>
 )
 
-/** Each lot as one horizontal bar: occupied | reserved | (free track) | closed. */
+// Each lot as one horizontal bar: occupied | reserved | (free track) | closed.
 const LotBars = ({ lots }) => {
   const tip = useTip()
   return (
@@ -138,7 +136,7 @@ const LotBars = ({ lots }) => {
   )
 }
 
-/** Vertical bars for one series. `bars` = [{ key, label, value, tip }]. */
+// Vertical bars for one series. `bars` = [{ key, label, value, tip }].
 const Columns = ({ bars, height = 160, labelEvery = 1, caption, unit }) => {
   const tip = useTip()
   const max = Math.max(1, ...bars.map((b) => b.value))

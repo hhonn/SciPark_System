@@ -8,7 +8,7 @@ import { staffAPI } from '../../utils/apiService'
 import { apiErrorMessage } from '../../utils/api'
 import { getPosition, geolocationErrorMessage, parseCoordinates } from '../../utils/geolocation'
 
-/** Admin tool: pin each lot to real coordinates so drivers can check in by GPS. */
+// Admin tool: pin each lot to real coordinates so drivers can check in by GPS.
 const LotLocations = ({ onChange }) => {
   const [zones, setZones] = useState([])
   const [radius, setRadius] = useState({})

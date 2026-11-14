@@ -2,12 +2,10 @@ import { forwardRef } from 'react'
 import { Loader2 } from 'lucide-react'
 import { cn } from '../../utils/cn'
 
-/**
- * Button variants map 1:1 to DESIGN.md.
- *
- * Hover raises elevation and deepens colour; it never scales. On a touch
- * screen a scaling button reads as the layout wobbling under your thumb.
- */
+// Button variants map 1:1 to DESIGN.md.
+//
+// Hover raises elevation and deepens colour; it never scales. On a touch
+// screen a scaling button reads as the layout wobbling under your thumb.
 const VARIANTS = {
   solid: 'bg-brand-500 text-white hover:bg-brand-600 shadow-e1 hover:shadow-e2 disabled:hover:bg-brand-500',
   soft: 'bg-brand-500/10 text-brand-600 hover:bg-brand-500/16',

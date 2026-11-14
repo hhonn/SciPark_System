@@ -1,6 +1,6 @@
 import { cn } from '../utils/cn'
 
-/** The parking "P" mark. Inline SVG so it inherits colour and needs no request. */
+// The parking "P" mark. Inline SVG so it inherits colour and needs no request.
 const Logo = ({ className }) => (
   <svg viewBox="0 0 64 64" className={cn('shrink-0', className)} role="img" aria-label="SciPark">
     <rect width="64" height="64" rx="16" className="fill-brand-500" />

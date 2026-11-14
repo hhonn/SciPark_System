@@ -4,18 +4,16 @@ import { Footprints } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { availabilityTone } from '../utils/format'
 
-/**
- * Schematic map of the faculty's parking lots.
- *
- * Every serious parking product — SpotHero, JustPark, Parkopedia — leads with a
- * map, because "where is it and how far do I then walk" is the question a text
- * list cannot answer. This is a hand-drawn schematic rather than a tile service:
- * the campus is five lots around one building, so a real map would need an API
- * key, cost money per load, and show far more city than anyone needs.
- *
- * Pin positions come from the zone documents (mapX/mapY as percentages), so the
- * map and the data can never drift apart.
- */
+// Schematic map of the faculty's parking lots.
+//
+// Parking apps such as SpotHero, JustPark and Parkopedia all lead with a
+// map, because "where is it and how far do I then walk" is the question a text
+// list cannot answer. This is a hand-drawn schematic rather than a tile service:
+// the campus is five lots around one building, so a real map would need an API
+// key, cost money per load, and show far more city than anyone needs.
+//
+// Pin positions come from the zone documents (mapX/mapY as percentages), so the
+// map and the data can never drift apart.
 
 const TONE_CLASS = {
   ok: { fill: 'fill-ok', text: 'text-ok', ring: 'stroke-ok' },
@@ -54,7 +52,7 @@ const CampusMap = ({ zones = [], selectedId, onSelect, className }) => {
         {/* Greenery */}
         <rect width="100" height="70" fill={`url(#grass-${gradientId})`} />
 
-        {/* Roads — drawn first so buildings and lots sit on top */}
+        {/* Roads go first so buildings and lots sit on top */}
         <g className="stroke-ink-300/50 dark:stroke-ink-700" strokeLinecap="round" fill="none">
           <path d="M0 50 H100" strokeWidth="5" />
           <path d="M0 22 H100" strokeWidth="3.5" />
@@ -72,7 +70,7 @@ const CampusMap = ({ zones = [], selectedId, onSelect, className }) => {
           <path d="M0 22 H100" />
         </g>
 
-        {/* Faculty building — the destination every walk time is measured to.
+        {/* Faculty building: every walk time is measured to it.
             It sits in the middle with the lots around it, and no other label is
             drawn nearby: a pin landing on top of a building name made both
             unreadable. */}
@@ -165,7 +163,7 @@ const CampusMap = ({ zones = [], selectedId, onSelect, className }) => {
               // Elevation + colour on hover, never scale: DESIGN.md rules that
               // out on buttons because it reads as jitter on touch. It also
               // fought the mount animation below, which drives `transform`
-              // itself — the two took turns owning the same property.
+              // itself, so the two took turns owning the same property.
               'bg-surface shadow-e2 transition-[box-shadow,border-color] duration-fast',
               'hover:shadow-e3 hover:border-brand-500/50',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',

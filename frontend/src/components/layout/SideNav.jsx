@@ -3,7 +3,7 @@ import { useNavItems } from './navItems'
 import { useBookingStore } from '../../stores/bookingStore'
 import { cn } from '../../utils/cn'
 
-/** Persistent rail at lg+. Below that the TabBar takes over. */
+// Persistent rail at lg+. Below that the TabBar takes over.
 const SideNav = () => {
   const activeBooking = useBookingStore((s) => s.activeBooking)
   const items = useNavItems()

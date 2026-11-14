@@ -1,8 +1,6 @@
-/**
- * Seeds the current MONGO_URI in-process (used by scripts/devServer.js).
- * The standalone `npm run seed` script connects and disconnects on its own;
- * this variant leaves the connection open for the server that follows it.
- */
+// Seeds the current MONGO_URI in-process (used by scripts/devServer.js).
+// The standalone `npm run seed` script connects and disconnects on its own;
+// this variant leaves the connection open for the server that follows it.
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import ParkingZone from "../models/parkingZoneModel.js";

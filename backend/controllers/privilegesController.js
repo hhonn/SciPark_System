@@ -13,11 +13,9 @@ import { TIER_LIST, TIERS, getEffectiveTier, publicTier } from "../config/pricin
 const SUBSCRIPTION_DAYS = 30;
 const VOUCHER_VALID_DAYS = 30;
 
-/*
-    @desc   List tiers and the caller's current standing
-    @route  GET /api/privileges
-    @access Private
-*/
+// @desc   List tiers and the caller's current standing
+// @route  GET /api/privileges
+// @access Private
 export const getTiers = async (req, res) => {
   try {
     const user = await User.findById(req.userId);
@@ -30,7 +28,7 @@ export const getTiers = async (req, res) => {
       .sort({ startedAt: 1 });
 
     // Prices and discounts come from config/pricing.js. They used to be typed
-    // out again here, in the checkout maths and in the README — three numbers
+    // out again here, in the checkout maths and in the README: three numbers
     // that disagreed with each other.
     const effective = getEffectiveTier(user);
 
@@ -58,11 +56,9 @@ export const getTiers = async (req, res) => {
   }
 };
 
-/*
-    @desc   Subscribe to a paid tier
-    @route  POST /api/privileges/subscribe
-    @access Private
-*/
+// @desc   Subscribe to a paid tier
+// @route  POST /api/privileges/subscribe
+// @access Private
 export const subscribe = async (req, res) => {
   const session = await mongoose.startSession();
   let subscription;
@@ -132,11 +128,9 @@ export const subscribe = async (req, res) => {
   }
 };
 
-/*
-    @desc   Redeem a promo code
-    @route  POST /api/privileges/redeem
-    @access Private
-*/
+// @desc   Redeem a promo code
+// @route  POST /api/privileges/redeem
+// @access Private
 export const redeemCode = async (req, res) => {
   const session = await mongoose.startSession();
   let payload = {};

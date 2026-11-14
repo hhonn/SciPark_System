@@ -1,17 +1,15 @@
 import nodemailer from "nodemailer";
 import { logEvent, logError } from "../utils/logger.js";
 
-/**
- * Mail transport. Three modes, chosen from the environment:
- *
- *  - MAIL_TRANSPORT=ses  Amazon SES through the AWS SDK. On AWS the instance's
- *                        IAM role authorises sending, so there is no mail
- *                        password anywhere — not in code, not in secrets.
- *  - SMTP credentials    EMAIL_USER / EMAIL_PASS (SMTP_USER / SMTP_PASSWORD
- *                        also accepted), e.g. Brevo or Gmail.
- *  - neither             sendMail is a logged no-op, so a missing mail setup
- *                        never breaks a request (local development, CI).
- */
+// Mail transport. Three modes, chosen from the environment:
+//
+//  - MAIL_TRANSPORT=ses  Amazon SES through the AWS SDK. On AWS the instance's
+//                        IAM role authorises sending, so there is no mail
+//                        password anywhere: not in code, not in secrets.
+//  - SMTP credentials    EMAIL_USER / EMAIL_PASS (SMTP_USER / SMTP_PASSWORD
+//                        also accepted), e.g. Brevo or Gmail.
+//  - neither             sendMail is a logged no-op, so a missing mail setup
+//                        never breaks a request (local development, CI).
 
 const host = process.env.EMAIL_HOST || process.env.SMTP_HOST || "smtp-relay.brevo.com";
 const port = Number(process.env.EMAIL_PORT || process.env.SMTP_PORT || 587);
@@ -52,7 +50,7 @@ const createTransport = async () => {
 
 const transporter = await createTransport();
 
-/** Send without ever rejecting: mail is never critical to a request. */
+// Send without ever rejecting: mail is never critical to a request.
 export const sendMailSafely = async (options) => {
   try {
     const info = await transporter.sendMail({ from: mailFrom, ...options });

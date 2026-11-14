@@ -174,7 +174,7 @@ bookingSchema.index({ status: 1, checkInDeadline: 1 });
 // A staff scan finds the booking from the QR token's hash alone.
 bookingSchema.index({ qrTokenHash: 1 });
 
-/** Statuses that block a user from opening another booking. */
+// Statuses that block a user from opening another booking.
 bookingSchema.statics.ACTIVE_STATUSES = ["pending", "confirmed"];
 
 const Booking = mongoose.models.Booking || mongoose.model("Booking", bookingSchema);

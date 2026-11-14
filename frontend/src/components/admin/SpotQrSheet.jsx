@@ -9,13 +9,11 @@ import { adminAPI } from '../../utils/apiService'
 import { apiErrorMessage } from '../../utils/api'
 import { spotQrUrl } from '../../utils/spotQr'
 
-/**
- * Admin tab: the QR sticker for every bay of a lot, ready to print.
- *
- * Each sticker holds a link to this site (/app/arrive?...), so print from the
- * address drivers will use. Moving the site to another domain means
- * reprinting.
- */
+// Admin tab: the QR sticker for every bay of a lot, ready to print.
+//
+// Each sticker holds a link to this site (/app/arrive?...), so print from the
+// address drivers will use. Moving the site to another domain means
+// reprinting.
 
 const escapeHtml = (text) =>
   String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
@@ -27,7 +25,7 @@ const toQr = (spot) =>
     width: 360,
   })
 
-/** A page of stickers, six to an A4 sheet, in a window of its own. */
+// A page of stickers, six to an A4 sheet, in a window of its own.
 const printStickers = async (zone, spots, images) => {
   const win = window.open('', '_blank')
   if (!win) {
